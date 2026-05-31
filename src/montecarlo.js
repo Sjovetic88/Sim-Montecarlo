@@ -6,6 +6,7 @@
  * 2. Classifica di Merito (Expected Points - xPTS)
  * 3. Indice di Sorpresa (La Mappa del Caos)
  * 4. Indice di Forma Reale (Analisi degli sbilanciamenti rispetto ai gol attesi degli ultimi 5 match)
+ * 5. Diagnostica di Sistema (/api/debug)
  */
 
 export default {
@@ -15,6 +16,12 @@ export default {
     const path = url.pathname;
 
     try {
+      // 0. Endpoint di Debug (Diagnostica del Database)
+      if (path === "/api/debug") {
+        const debugData = await runDiagnostics(env);
+        return jsonResponse(debugData);
+      }
+
       // 1. Endpoint: Simulazione Nitro o Lettura Proiezioni
       if (path === "/api/projections") {
         const league = url.searchParams.get("league");
@@ -67,6 +74,21 @@ export default {
         return jsonResponse(realForm);
       }
 
+      // Risposta di cortesia per la Home Page
+      if (path === "/") {
+        return jsonResponse({
+          status: "online",
+          module: "Predictive Intelligence Suite v1.0",
+          endpoints_disponibili: [
+            "/api/debug",
+            "/api/chaos-map",
+            "/api/projections?league=SIGLA",
+            "/api/expected-points?league=SIGLA",
+            "/api/real-form?league=SIGLA"
+          ]
+        });
+      }
+
       return jsonResponse({ error: "Endpoint non trovato." }, 404);
 
     } catch (err) {
@@ -80,7 +102,58 @@ export default {
   }
 };
 
-// --- FUNZIONI DI SUPPORTO E DI GESTIONE ERRORI ---
+// --- STRUMENTO DI DIAGNOSTICA (DEBUG) ---
+
+async function runDiagnostics(env) {
+  const diagnostics = {
+    database_archivio: {},
+    database_pronostici: {},
+    allineamento_codici: {}
+  };
+
+  try {
+    // Conteggio tabelle principali in DB_ARCHIVIO
+    const regoleCount = await env.DB_ARCHIVIO.prepare("SELECT COUNT(*) as count FROM regole_leghe").first();
+    const matchesCount = await env.DB_ARCHIVIO.prepare("SELECT COUNT(*) as count FROM matches").first();
+    const ratingsCount = await env.DB_ARCHIVIO.prepare("SELECT COUNT(*) as count FROM team_ratings").first();
+    const lastSeason = await env.DB_ARCHIVIO.prepare("SELECT MAX(season) as season, COUNT(*) as count FROM matches").first();
+
+    diagnostics.database_archivio = {
+      righe_regole_leghe: regoleCount?.count || 0,
+      righe_matches: matchesCount?.count || 0,
+      righe_team_ratings: ratingsCount?.count || 0,
+      stagione_piu_recente: lastSeason?.season || "Nessuna",
+      partite_stagione_recente: lastSeason?.count || 0
+    };
+
+    // Conteggio tabelle in DB_PRONOSTICI
+    const parametriCount = await env.DB_PRONOSTICI.prepare("SELECT COUNT(*) as count FROM parametri_campionato").first();
+    const proiezioniCount = await env.DB_PRONOSTICI.prepare("SELECT COUNT(*) as count FROM proiezioni_finali").first();
+
+    diagnostics.database_pronostici = {
+      righe_parametri_campionato: parametriCount?.count || 0,
+      righe_proiezioni_finali: proiezioniCount?.count || 0
+    };
+
+    // Esempi di sigle campionati per verificare l'allineamento dei codici
+    const esempioRegola = await env.DB_ARCHIVIO.prepare("SELECT div FROM regole_leghe LIMIT 3").all();
+    const esempioMatch = await env.DB_ARCHIVIO.prepare("SELECT DISTINCT div FROM matches LIMIT 3").all();
+    const esempioRating = await env.DB_ARCHIVIO.prepare("SELECT DISTINCT current_div FROM team_ratings LIMIT 3").all();
+
+    diagnostics.allineamento_codici = {
+      sigle_in_regole_leghe: esempioRegola.results.map(r => r.div),
+      sigle_in_matches: esempioMatch.results.map(r => r.div),
+      sigle_in_team_ratings: esempioRating.results.map(r => r.current_div)
+    };
+
+  } catch (err) {
+    diagnostics.errore_diagnostica = err.message;
+  }
+
+  return diagnostics;
+}
+
+// --- FUNZIONI DI SUPPORTO E DI GESTIONE ---
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -88,7 +161,7 @@ function jsonResponse(data, status = 200) {
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
-      "Cache-Control": "public, max-age=60"
+      "Cache-Control": "public, max-age=10" // Cache ridotta per il debug
     }
   });
 }
@@ -125,19 +198,16 @@ async function getCurrentSeason(league, env) {
 // --- CORE ENGINE 1: SIMULATORE MONTE CARLO ---
 
 async function runMonteCarloSimulation(league, iterations, env) {
-  // A. Recupero Regole della Lega
   const rules = await env.DB_ARCHIVIO.prepare(
     "SELECT * FROM regole_leghe WHERE div = ?"
   ).bind(league).first();
   if (!rules) throw new Error("Regole non trovate per la lega: " + league);
 
-  // B. Recupero Parametro Rho calibrato
   const calibration = await env.DB_PRONOSTICI.prepare(
     "SELECT current_rho FROM parametri_campionato WHERE campionato = ?"
   ).bind(league).first();
   const rho = calibration?.current_rho || 0;
 
-  // C. Recupero Rating e Forze Squadre
   const teamRows = await env.DB_ARCHIVIO.prepare(
     "SELECT team_name, elo, alpha, beta, h_factor FROM team_ratings WHERE current_div = ?"
   ).bind(league).all();
@@ -157,7 +227,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
     });
   });
 
-  // D. Recupero Match Giocati e Costruzione Classifica Attuale
   const currentSeason = await getCurrentSeason(league, env);
   if (!currentSeason) throw new Error("Impossibile determinare la stagione corrente per " + league);
 
@@ -165,7 +234,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
     "SELECT hometeam, awayteam, fthg, ftag, ftr FROM matches WHERE div = ? AND season = ? ORDER BY date ASC"
   ).bind(league, currentSeason).all();
 
-  // Inizializzazione Classifica Reale
   const actualStandings = {};
   teams.forEach(t => {
     actualStandings[t.team_name] = { points: 0, goalsScored: 0, goalsConceded: 0, played: 0 };
@@ -191,7 +259,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
     }
   });
 
-  // E. Sottrazione per ottenere il Calendario Rimanente
   const playedPairs = new Set(playedMatches.results.map(m => `${m.hometeam}||${m.awayteam}`));
   const remainingCalendar = [];
   
@@ -206,7 +273,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
     }
   }
 
-  // F. Contatori Statistici per le 10.000 (o 2.000) Iterazioni
   const stats = {};
   teams.forEach(t => {
     stats[t.team_name] = {
@@ -216,9 +282,8 @@ async function runMonteCarloSimulation(league, iterations, env) {
   });
 
   const numTeams = rules.num_squadre;
-  const isPointHalvingLeague = (league.startsWith("B") || league.startsWith("AUT")); // Belgio o Austria
+  const isPointHalvingLeague = (league.startsWith("B") || league.startsWith("AUT"));
 
-  // LOOP DI MONTE CARLO
   for (let sim = 0; sim < iterations; sim++) {
     const simStandings = {};
     teams.forEach(t => {
@@ -231,30 +296,23 @@ async function runMonteCarloSimulation(league, iterations, env) {
       };
     });
 
-    // Simulazione del Calendario Standard
     for (const match of remainingCalendar) {
-      // Controllo per le Leghe con Split (se si supera la soglia di sbarramento, saltiamo le simulazioni inter-poule temporaneamente)
       if (rules.soglia_split > 0 && simStandings[match.home].played >= rules.soglia_split) {
         continue; 
       }
-
       simulateMatch(match.home, match.away, simStandings, teamMap, rho, rules.giornate_totali, false);
     }
 
-    // Gestione dello "Split" (Campionati Dinamici come Belgio/Austria/Scozia)
     if (rules.soglia_split > 0) {
-      // 1. Classifica temporanea alla soglia di split
       const midStandings = Object.values(simStandings).sort((a, b) => b.points - a.points || (b.goalsScored - b.goalsConceded) - (a.goalsScored - a.goalsConceded));
       const midTopGroup = new Set(midStandings.slice(0, numTeams / 2).map(x => x.name));
 
-      // 2. Applicazione eventuale dimezzamento punti (Belgio e Austria)
       if (isPointHalvingLeague) {
         teams.forEach(t => {
           simStandings[t.team_name].points = Math.ceil(simStandings[t.team_name].points / 2);
         });
       }
 
-      // 3. Simulazione della seconda fase (scontri diretti all'interno del proprio gruppo)
       for (const match of remainingCalendar) {
         const sameGroup = (midTopGroup.has(match.home) && midTopGroup.has(match.away)) || 
                           (!midTopGroup.has(match.home) && !midTopGroup.has(match.away));
@@ -265,7 +323,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
       }
     }
 
-    // Calcolo Classifica Finale per l'iterazione corrente
     const finalStandings = Object.values(simStandings).sort((a, b) => {
       if (b.points !== a.points) return b.points - a.points;
       const gdB = b.goalsScored - b.goalsConceded;
@@ -274,30 +331,23 @@ async function runMonteCarloSimulation(league, iterations, env) {
       return b.goalsScored - a.goalsScored;
     });
 
-    // Aggiornamento dei contatori obiettivi basato sulle regole della lega
     finalStandings.forEach((team, rank) => {
-      const idx = rank + 1; // Classifica da 1 a N
+      const idx = rank + 1;
       const s = stats[team.name];
       s.totalPoints += team.points;
 
       if (idx === 1) s.scudetto++;
-      
-      // Zona Coppe Europee
       if (idx > 1 && idx <= rules.posti_ucl) s.ucl++;
       if (idx > rules.posti_ucl && idx <= (rules.posti_ucl + rules.posti_uel)) s.uel++;
       if (idx > (rules.posti_ucl + rules.posti_uel) && idx <= (rules.posti_ucl + rules.posti_uel + rules.posti_uecl)) s.uecl++;
 
-      // Promozione e Playoff/Playout
       if (rules.posti_promo && idx <= rules.posti_promo) s.promo++;
       if (rules.playoff && idx > rules.posti_promo && idx <= (rules.posti_promo + rules.playoff)) s.playoff++;
       if (rules.playout && idx >= (numTeams - rules.posti_retro - rules.playout + 1) && idx <= (numTeams - rules.posti_retro)) s.playout++;
-
-      // Zona Retrocessione
       if (idx > (numTeams - rules.posti_retro)) s.retro++;
     });
   }
 
-  // G. Preparazione ed invio dei risultati per il Database
   const bulkData = [];
   const timestamp = new Date().toISOString();
 
@@ -319,7 +369,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
     };
     bulkData.push(item);
 
-    // Scrittura immediata o differita in DB_PRONOSTICI
     await env.DB_PRONOSTICI.prepare(`
       INSERT INTO proiezioni_finali 
       (campionato, squadra, scudetto_prob, ucl_prob, uel_prob, uecl_prob, promo_prob, retro_prob, playoff_prob, playout_prob, xpts_mediana, ultimo_aggiornamento)
@@ -344,7 +393,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
   return { league, simulated_matches_remaining: remainingCalendar.length, iterations, results: bulkData };
 }
 
-// Funzione interna per simulare il singolo match con correzione ELO, Dixon-Coles e Tensione Agonistica
 function simulateMatch(homeName, awayName, standings, teamMap, rho, maxGames, isSplitPhase) {
   const home = teamMap.get(homeName);
   const away = teamMap.get(awayName);
@@ -354,53 +402,42 @@ function simulateMatch(homeName, awayName, standings, teamMap, rho, maxGames, is
   let alphaA = away.alpha;
   let betaA = away.beta;
 
-  // 1. Integrazione dello Scarto ELO (Sensibilità 0.0002 come da accordi Modulo 3)
   const eloDiff = home.elo - away.elo;
   const eloScale = 1 + eloDiff * 0.0002;
 
-  // 2. Calcolo dei Gol Attesi Lamda (Home) e Mu (Away)
   let lambda = alphaH * betaA * home.hFactor * eloScale;
   let mu = (alphaA * betaH) / eloScale;
 
-  // Limiti di sicurezza per evitare valori matematicamente impossibili
   lambda = Math.max(0.05, Math.min(8.0, lambda));
   mu = Math.max(0.05, Math.min(8.0, mu));
 
-  // 3. Tensione Agonistica (Applicata nelle ultime 6 giornate della stagione regolare o nella fase split)
   const gamesLeftH = maxGames - standings[homeName].played;
   const gamesLeftA = maxGames - standings[awayName].played;
 
   if (gamesLeftH <= 6 || isSplitPhase) {
-    // Se la squadra è in lotta per traguardi o salvezza, riceve un bonus del 5% di intensità.
-    // Se è nella zona neutra del limbo, cala l'attenzione (-5% di malus).
-    // Nota: la logica semplificata simula questa oscillazione sulla base della deviazione dei punti.
     const hPoints = standings[homeName].points;
     const aPoints = standings[awayName].points;
     if (Math.abs(hPoints - aPoints) < 6) {
-      lambda *= 1.05; // Intensità da scontro diretto
+      lambda *= 1.05;
     } else if (hPoints > 45 && hPoints < 55) {
-      lambda *= 0.95; // Effetto vacanza mentale
+      lambda *= 0.95;
     }
   }
 
-  // 4. Calcolo del Risultato esatto tramite Poisson
   const homeGoals = drawPoisson(lambda);
   const awayGoals = drawPoisson(mu);
 
-  // 5. Correzione Dixon-Coles tramite parametro Rho (influenza i pareggi a bassi gol)
   let finalHomeGoals = homeGoals;
   let finalAwayGoals = awayGoals;
   if (homeGoals <= 1 && awayGoals <= 1) {
     const tau = getDixonColesTau(homeGoals, awayGoals, lambda, mu, rho);
     if (Math.random() > tau) {
-      // Se il fattore correttivo fallisce, ridistribuiamo l'esito verso un pareggio o punteggio plausibile
       if (Math.random() > 0.5) {
-        finalHomeGoals = finalAwayGoals; // Forza il pareggio
+        finalHomeGoals = finalAwayGoals;
       }
     }
   }
 
-  // Aggiornamento statistiche del match simulato
   standings[homeName].played++;
   standings[awayName].played++;
   standings[homeName].goalsScored += finalHomeGoals;
@@ -450,13 +487,11 @@ async function calculateExpectedPoints(league, env) {
     const away = teamMap.get(m.awayteam);
     if (!home || !away) return;
 
-    // Calcolo probabilità reali tramite Dixon-Coles Poisson
     const eloDiff = home.elo - away.elo;
     const eloScale = 1 + eloDiff * 0.0002;
     const lambda = Math.max(0.05, home.alpha * away.beta * (home.h_factor || 1.15) * eloScale);
     const mu = Math.max(0.05, (away.alpha * home.beta) / eloScale);
 
-    // Calcolo probabilità esatte (fino a max 5 gol per lato)
     let pWin = 0, pDraw = 0, pLoss = 0;
     const maxG = 5;
     const pHG = new Array(maxG + 1).fill(0).map((_, i) => (Math.pow(lambda, i) * Math.exp(-lambda)) / factorial(i));
@@ -474,11 +509,9 @@ async function calculateExpectedPoints(league, env) {
       }
     }
 
-    // Normalizzazione
     const sum = pWin + pDraw + pLoss;
     pWin /= sum; pDraw /= sum; pLoss /= sum;
 
-    // Assegnazione Punti Reali ed Expected Points
     const xPtsHome = pWin * 3 + pDraw * 1;
     const xPtsAway = pLoss * 3 + pDraw * 1;
 
@@ -523,7 +556,7 @@ async function calculateChaosMap(env) {
       "SELECT hometeam, awayteam, ftr FROM matches WHERE div = ? AND season = ?"
     ).bind(league.div, currentSeason).all();
 
-    if (matches.results.length < 15) continue; // Salta se i dati sono insufficienti per fare statistica
+    if (matches.results.length < 15) continue; // Filtro di sicurezza 15 partite
 
     const teamRows = await env.DB_ARCHIVIO.prepare(
       "SELECT team_name, elo, alpha, beta, h_factor FROM team_ratings WHERE current_div = ?"
@@ -545,17 +578,15 @@ async function calculateChaosMap(env) {
       const lambda = home.alpha * away.beta * (home.h_factor || 1.15) * eloScale;
       const mu = (away.alpha * home.beta) / eloScale;
 
-      // Probabilità semplificata dell'esito
       const sumG = lambda + mu;
       const pWin = lambda / (sumG || 1);
       const pLoss = mu / (sumG || 1);
-      const pDraw = 0.26; // Stima empirica di baseline per i pareggi
+      const pDraw = 0.26;
 
       let pOutcome = pDraw;
       if (m.ftr === "H") pOutcome = pWin * (1 - pDraw);
       if (m.ftr === "A") pOutcome = pLoss * (1 - pDraw);
 
-      // Lo shock è l'inverso della probabilità assegnata all'evento reale: 1 - P_esito
       totalShock += (1 - pOutcome);
       count++;
     });
@@ -565,7 +596,7 @@ async function calculateChaosMap(env) {
         league: league.div,
         nazione: league.nazione,
         descrizione: league.descrizione,
-        chaos_index: Number((totalShock / count * 100).toFixed(1)), // Percentuale di imprevedibilità
+        chaos_index: Number((totalShock / count * 100).toFixed(1)),
         matches_analyzed: count
       });
     }
@@ -591,7 +622,6 @@ async function calculateRealForm(league, env) {
     formTable[t.team_name] = { team: t.team_name, actualGoalsScored: 0, expectedGoalsScored: 0, actualGoalsConceded: 0, expectedGoalsConceded: 0, ratingFormaAttacco: 0, ratingFormaDifesa: 0, partiteG: 0 };
   });
 
-  // Estraiamo tutti i match della lega ordinati per data per pescare solo gli ultimi 5 di ogni squadra
   const matches = await env.DB_ARCHIVIO.prepare(
     "SELECT hometeam, awayteam, fthg, ftag FROM matches WHERE div = ? AND season = ? ORDER BY date DESC"
   ).bind(league, currentSeason).all();
@@ -601,7 +631,6 @@ async function calculateRealForm(league, env) {
     const away = teamMap.get(m.awayteam);
     if (!home || !away) return;
 
-    // Estraiamo solo gli ultimi 5 match effettivi per ogni squadra
     const hForm = formTable[m.hometeam];
     const aForm = formTable[m.awayteam];
 
@@ -628,11 +657,8 @@ async function calculateRealForm(league, env) {
   });
 
   return Object.values(formTable).map(t => {
-    // Differenza tra gol fatti e gol attesi (positivo = freddezza sotto porta / sovra-performance)
     t.ratingFormaAttacco = Number((t.actualGoalsScored - t.expectedGoalsScored).toFixed(2));
-    // Differenza tra gol subiti e attesi subiti (negativo = ottima fase difensiva o portiere in stato di grazia)
     t.ratingFormaDifesa = Number((t.expectedGoalsConceded - t.actualGoalsConceded).toFixed(2));
-    
     t.expectedGoalsScored = Number(t.expectedGoalsScored.toFixed(2));
     t.expectedGoalsConceded = Number(t.expectedGoalsConceded.toFixed(2));
     return t;
@@ -642,7 +668,6 @@ async function calculateRealForm(league, env) {
 // --- ROTAZIONE SCHEDULATA DAEMON ---
 
 async function handleScheduledSimulation(env) {
-  // Trova il campionato che non viene aggiornato da più tempo
   const targetLeague = await env.DB_PRONOSTICI.prepare(`
     SELECT campionato FROM parametri_campionato 
     WHERE is_completed = 0 
@@ -650,10 +675,8 @@ async function handleScheduledSimulation(env) {
   `).first();
 
   if (targetLeague) {
-    // Esegue la simulazione standard completa a 10.000 iterazioni in background per evitare timeout
     await runMonteCarloSimulation(targetLeague.campionato, 10000, env);
     
-    // Aggiorna il timestamp di completamento nel database dei pronostici
     const nowTimestamp = new Date().toISOString();
     await env.DB_PRONOSTICI.prepare(`
       UPDATE parametri_campionato 
