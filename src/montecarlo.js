@@ -1,31 +1,44 @@
 /**
  * GOLDBET ANALYST v1.0 - MODULO 4: PREDICTIVE INTELLIGENCE SUITE
  * 
- * Funzionalità integrate:
- * 1. Simulatore Monte Carlo della Stagione (Gestione Split Belgio/Austria e Tensione Agonistica)
- * 2. Classifica di Merito (Expected Points - xPTS)
- * 3. Indice di Sorpresa (La Mappa del Caos)
- * 4. Indice di Forma Reale (Analisi degli sbilanciamenti rispetto ai gol attesi degli ultimi 5 match)
- * 5. Diagnostica di Sistema (/api/debug)
- * 
- * Ottimizzazione Relazionale: Utilizza JOIN sulla tabella 'teams' tramite ID numerici
- * per evitare disallineamenti di stringhe da football-data.co.uk.
+ * Sviluppato come "Monolito Serverless" (Strada B):
+ * - "/" o "/dashboard" : Fornisce la Dashboard HTML/CSS/JS (OLED Black Style)
+ * - "/api/leagues"     : Elenco delle leghe configurate
+ * - "/api/projections" : Simulazioni Monte Carlo (Standard / Nitro Mode)
+ * - "/api/expected-points" : Expected Points (xPTS)
+ * - "/api/chaos-map"   : Indice di Sorpresa globale (La Mappa del Caos)
+ * - "/api/real-form"   : Analisi Forma Reale (Ultime 5 partite xG vs Gol reali)
+ * - "/api/debug"       : Diagnostica delle tabelle D1
  */
 
 export default {
-  // Gestore delle richieste HTTP
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
 
     try {
-      // 0. Endpoint di Debug (Diagnostica del Database)
+      // 0. Dashboard Grafica Principale (OLED Black / Neon Pulse)
+      if (path === "/" || path === "/dashboard") {
+        return new Response(HTML_DASHBOARD, {
+          headers: { "Content-Type": "text/html; charset=utf-8" }
+        });
+      }
+
+      // 1. Endpoint: Elenco delle Leghe
+      if (path === "/api/leagues") {
+        const leagues = await env.DB_ARCHIVIO.prepare(
+          "SELECT div, nazione, descrizione FROM regole_leghe ORDER BY nazione ASC"
+        ).all();
+        return jsonResponse(leagues.results);
+      }
+
+      // 2. Endpoint: Diagnostica di Sistema
       if (path === "/api/debug") {
         const debugData = await runDiagnostics(env);
         return jsonResponse(debugData);
       }
 
-      // 1. Endpoint: Simulazione Nitro o Lettura Proiezioni
+      // 3. Endpoint: Monte Carlo Proiezioni
       if (path === "/api/projections") {
         const league = url.searchParams.get("league");
         if (!league) return jsonResponse({ error: "Parametro 'league' mancante." }, 400);
@@ -33,12 +46,10 @@ export default {
         const forceSimulate = url.searchParams.get("nitro") === "true";
 
         if (forceSimulate) {
-          // Nitro Mode: esegue una simulazione rapida a 2.000 iterazioni in tempo reale
           const result = await runMonteCarloSimulation(league, 2000, env);
           return jsonResponse({ mode: "nitro", ...result });
         }
 
-        // Lettura ordinaria da DB_PRONOSTICI (con caching Edge di 2 ore)
         const cacheKey = new Request(url.toString(), request);
         const cache = caches.default;
         let cachedResponse = await cache.match(cacheKey);
@@ -53,7 +64,7 @@ export default {
         return response;
       }
 
-      // 2. Endpoint: Classifica di Merito (Expected Points - xPTS)
+      // 4. Endpoint: Classifica di Merito (xPTS)
       if (path === "/api/expected-points") {
         const league = url.searchParams.get("league");
         if (!league) return jsonResponse({ error: "Parametro 'league' mancante." }, 400);
@@ -62,34 +73,19 @@ export default {
         return jsonResponse(xptsTable);
       }
 
-      // 3. Endpoint: Indice di Sorpresa (La Mappa del Caos)
+      // 5. Endpoint: La Mappa del Caos (Chaos Map)
       if (path === "/api/chaos-map") {
         const chaosMap = await calculateChaosMap(env);
         return jsonResponse(chaosMap);
       }
 
-      // 4. Endpoint: Indice di Forma Reale (Ultime 5 Partite)
+      // 6. Endpoint: Forma Reale (Last 5 Matches)
       if (path === "/api/real-form") {
         const league = url.searchParams.get("league");
         if (!league) return jsonResponse({ error: "Parametro 'league' mancante." }, 400);
 
         const realForm = await calculateRealForm(league, env);
         return jsonResponse(realForm);
-      }
-
-      // Risposta di cortesia per la Home Page
-      if (path === "/") {
-        return jsonResponse({
-          status: "online",
-          module: "Predictive Intelligence Suite v1.0",
-          endpoints_disponibili: [
-            "/api/debug",
-            "/api/chaos-map",
-            "/api/projections?league=SIGLA",
-            "/api/expected-points?league=SIGLA",
-            "/api/real-form?league=SIGLA"
-          ]
-        });
       }
 
       return jsonResponse({ error: "Endpoint non trovato." }, 404);
@@ -99,7 +95,7 @@ export default {
     }
   },
 
-  // Daemon orario (Cron Trigger): simula a rotazione la lega con aggiornamento più vecchio
+  // Cron Trigger orario per calcolo differito a 10.000 iterazioni
   async scheduled(event, env, ctx) {
     ctx.waitUntil(handleScheduledSimulation(env));
   }
@@ -108,12 +104,7 @@ export default {
 // --- STRUMENTO DI DIAGNOSTICA (DEBUG) ---
 
 async function runDiagnostics(env) {
-  const diagnostics = {
-    database_archivio: {},
-    database_pronostici: {},
-    allineamento_codici: {}
-  };
-
+  const diagnostics = { database_archivio: {}, database_pronostici: {}, allineamento_codici: {} };
   try {
     const regoleCount = await env.DB_ARCHIVIO.prepare("SELECT COUNT(*) as count FROM regole_leghe").first();
     const matchesCount = await env.DB_ARCHIVIO.prepare("SELECT COUNT(*) as count FROM matches").first();
@@ -144,15 +135,13 @@ async function runDiagnostics(env) {
       sigle_in_matches: esempioMatch.results.map(r => r.div),
       sigle_in_team_ratings: esempioRating.results.map(r => r.current_div)
     };
-
   } catch (err) {
     diagnostics.errore_diagnostica = err.message;
   }
-
   return diagnostics;
 }
 
-// --- FUNZIONI DI SUPPORTO E DI GESTIONE ---
+// --- FUNZIONI DI COPERTURA E METODI AUSILIARI ---
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -160,12 +149,11 @@ function jsonResponse(data, status = 200) {
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
-      "Cache-Control": "public, max-age=10"
+      "Cache-Control": "public, max-age=15"
     }
   });
 }
 
-// Generatore Poisson tramite algoritmo di Knuth (ultra-veloce)
 function drawPoisson(lambda) {
   const L = Math.exp(-lambda);
   let k = 0;
@@ -177,7 +165,6 @@ function drawPoisson(lambda) {
   return k - 1;
 }
 
-// Algoritmo di correzione Dixon-Coles per punteggi bassi (0-0, 1-0, 0-1, 1-1)
 function getDixonColesTau(x, y, lambda, mu, rho) {
   if (x === 0 && y === 0) return 1 - lambda * mu * rho;
   if (x === 1 && y === 0) return 1 + mu * rho;
@@ -186,7 +173,6 @@ function getDixonColesTau(x, y, lambda, mu, rho) {
   return 1;
 }
 
-// Estrazione della stagione corrente basata sul record più recente nel database per la specifica lega
 async function getCurrentSeason(league, env) {
   const res = await env.DB_ARCHIVIO.prepare(
     "SELECT MAX(season) as current_season FROM matches WHERE div = ?"
@@ -194,7 +180,7 @@ async function getCurrentSeason(league, env) {
   return res?.current_season || null;
 }
 
-// --- CORE ENGINE 1: SIMULATORE MONTE CARLO ---
+// --- CORE ENGINE 1: SIMULATORE MONTE CARLO (OTTIMIZZATO) ---
 
 async function runMonteCarloSimulation(league, iterations, env) {
   const rules = await env.DB_ARCHIVIO.prepare(
@@ -207,7 +193,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
   ).bind(league).first();
   const rho = calibration?.current_rho || 0;
 
-  // Caricamento dei rating in memoria con chiave in UPPERCASE per allineamento perfetto
   const teamRows = await env.DB_ARCHIVIO.prepare(
     "SELECT team_name, elo, alpha, beta, h_factor FROM team_ratings WHERE current_div = ?"
   ).bind(league).all();
@@ -230,7 +215,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
   const currentSeason = await getCurrentSeason(league, env);
   if (!currentSeason) throw new Error("Impossibile determinare la stagione corrente per " + league);
 
-  // Estrazione partite giocate con JOIN relazionale su 'teams' per nomi ufficiali
   const playedMatches = await env.DB_ARCHIVIO.prepare(`
     SELECT 
       ht.name as hometeam,
@@ -273,7 +257,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
     }
   });
 
-  // Creazione del calendario rimanente
   const playedPairs = new Set(playedMatches.results.map(m => `${m.hometeam.toUpperCase().trim()}||${m.awayteam.toUpperCase().trim()}`));
   const remainingCalendar = [];
   
@@ -288,7 +271,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
     }
   }
 
-  // Pre-risoluzione dei puntatori in memoria prima di lanciare il ciclo Monte Carlo
   const resolvedCalendar = remainingCalendar.map(match => {
     return {
       homeKey: match.home,
@@ -296,7 +278,7 @@ async function runMonteCarloSimulation(league, iterations, env) {
       homeObj: teamMap.get(match.home),
       awayObj: teamMap.get(match.away)
     };
-  }).filter(m => m.homeObj && m.awayObj); // Esclude eventuali accoppiamenti orfani
+  }).filter(m => m.homeObj && m.awayObj);
 
   const stats = {};
   teams.forEach(t => {
@@ -310,7 +292,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
   const numTeams = rules.num_squadre;
   const isPointHalvingLeague = (league.startsWith("B") || league.startsWith("AUT"));
 
-  // LOOP DI MONTE CARLO (Altamente ottimizzato)
   for (let sim = 0; sim < iterations; sim++) {
     const simStandings = {};
     teams.forEach(t => {
@@ -323,7 +304,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
       };
     });
 
-    // Simulazione calendario standard
     for (const match of resolvedCalendar) {
       if (rules.soglia_split > 0 && simStandings[match.homeKey].played >= rules.soglia_split) {
         continue; 
@@ -331,7 +311,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
       simulateResolvedMatch(match, simStandings, rho, rules.giornate_totali, false);
     }
 
-    // Gestione dello split
     if (rules.soglia_split > 0) {
       const midStandings = Object.keys(simStandings).map(key => ({
         key,
@@ -427,7 +406,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
   return { league, simulated_matches_remaining: resolvedCalendar.length, iterations, results: bulkData };
 }
 
-// Funzione interna per simulare il singolo match pre-risolto in memoria
 function simulateResolvedMatch(match, standings, rho, maxGames, isSplitPhase) {
   const home = match.homeObj;
   const away = match.awayObj;
@@ -590,7 +568,7 @@ function factorial(n) {
   return r;
 }
 
-// --- CORE ENGINE 3: INDICE DI SORPRESA (La Mappa del Caos) ---
+// --- CORE ENGINE 3: INDICE DI SORPRESA (Chaos Map) ---
 
 async function calculateChaosMap(env) {
   const leaguesRes = await env.DB_ARCHIVIO.prepare("SELECT div, nazione, descrizione FROM regole_leghe").all();
@@ -611,7 +589,7 @@ async function calculateChaosMap(env) {
       WHERE m.div = ? AND m.season = ?
     `).bind(league.div, currentSeason).all();
 
-    if (matches.results.length < 15) continue; // Salta se i dati sono troppo scarsi
+    if (matches.results.length < 15) continue;
 
     const teamRows = await env.DB_ARCHIVIO.prepare(
       "SELECT team_name, elo, alpha, beta, h_factor FROM team_ratings WHERE current_div = ?"
@@ -756,3 +734,541 @@ async function handleScheduledSimulation(env) {
     `).bind(nowTimestamp, targetLeague.campionato).run();
   }
 }
+
+// --- CORE INTERFACE: CODICE HTML DASHBOARD (OLED STYLE) ---
+
+const HTML_DASHBOARD = `
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>GOLDBET Predictive Suite</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,800;1,800&family=Share+Tech+Mono&display=swap');
+
+    :root {
+      --bg: #000000;
+      --surface: #09090b;
+      --cyan: #00E5FF;
+      --gold: #ffd700;
+      --orange: #ff8c00;
+      --green: #10b981;
+      --red: #ef4444;
+      --purple: #bc13fe;
+      --text: #ffffff;
+      --text-dim: #71717a;
+      --border: #27272a;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Share Tech Mono', monospace;
+      padding: 0;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* HEADER D'ELITE */
+    .header-container { 
+      background: var(--bg); 
+      padding: 12px 16px; 
+      display: flex; 
+      align-items: center; 
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border); 
+    }
+
+    .logo { 
+      font-family: 'Montserrat', sans-serif; 
+      font-weight: 800; 
+      font-size: 16px; 
+      letter-spacing: -1px; 
+      display: flex; 
+      align-items: center; 
+      gap: 6px; 
+    }
+
+    .gold { color: white; font-style: italic; }
+    .dl { color: var(--cyan); font-style: normal; }
+
+    .status-dot { 
+      width: 8px; height: 8px; 
+      background: var(--cyan); 
+      border-radius: 50%; 
+      box-shadow: 0 0 8px var(--cyan); 
+      animation: pulse 2s infinite; 
+    }
+
+    @keyframes pulse { 
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 229, 255, 0.7); } 
+      70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(0, 229, 255, 0); } 
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 229, 255, 0); } 
+    }
+
+    /* BARRA DI NAVIGAZIONE E LEAGUE SELECTOR */
+    .top-bar { 
+      background: var(--surface); 
+      padding: 6px; 
+      display: flex; 
+      gap: 4px; 
+      overflow-x: auto; 
+      position: sticky; 
+      top: 0; 
+      z-index: 90; 
+      border-bottom: 1px solid var(--border); 
+      scrollbar-width: none;
+    }
+    .top-bar::-webkit-scrollbar { display: none; }
+
+    .btn-tab { 
+      background: #18181b; 
+      color: var(--text-dim); 
+      border: none; 
+      padding: 6px 12px; 
+      border-radius: 12px; 
+      font-size: 0.65rem; 
+      font-weight: 800; 
+      white-space: nowrap; 
+      cursor: pointer;
+    }
+
+    .btn-tab.active { 
+      background: var(--cyan); 
+      color: #000; 
+    }
+
+    /* CONTROL PANEL (SELECT & NITRO) */
+    .control-panel {
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    select {
+      background: #18181b;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-family: inherit;
+      flex-grow: 1;
+      max-width: 200px;
+    }
+
+    .btn-nitro {
+      background: var(--orange);
+      color: #000;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 0.7rem;
+      font-weight: 800;
+      cursor: pointer;
+      font-family: 'Montserrat', sans-serif;
+    }
+
+    /* CONTENITORE TABELLE */
+    .table-container { 
+      width: 100%; 
+      overflow-x: auto; 
+    }
+
+    table { 
+      width: 100%; 
+      border-collapse: collapse; 
+      font-size: 0.7rem; 
+      table-layout: fixed; 
+    }
+
+    thead tr {
+      background: #18181b;
+      border-bottom: 2px solid var(--border);
+    }
+
+    th, td { 
+      padding: 4px 6px; 
+      text-align: center; 
+      border-bottom: 1px solid var(--border); 
+      height: 34px; 
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    th {
+      color: var(--text-dim);
+      font-weight: 800;
+    }
+
+    /* Colonna Sticky (Squadra / Lega) */
+    th:first-child, td:first-child { 
+      position: sticky; 
+      left: 0; 
+      background: var(--surface); 
+      z-index: 80; 
+      border-right: 1px solid var(--border); 
+      width: 110px !important; 
+      text-align: left;
+      font-weight: bold;
+    }
+
+    /* COLORI LIVELLI NEON */
+    .neon-cyan { color: var(--cyan); }
+    .neon-gold { color: var(--gold); }
+    .neon-orange { color: var(--orange); }
+    .neon-green { color: var(--green); }
+    .neon-red { color: var(--red); }
+    .neon-purple { color: var(--purple); }
+    .neutral-dim { color: var(--text-dim); }
+
+    /* LOADING & TOAST */
+    .loading-container {
+      padding: 40px;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.8rem;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      right: 16px;
+      background: #18181b;
+      border: 1px solid var(--cyan);
+      color: var(--text);
+      padding: 10px;
+      font-size: 0.75rem;
+      border-radius: 6px;
+      text-align: center;
+      display: none;
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER D'ELITE -->
+  <div class="header-container">
+    <div class="logo">
+      <div><span class="gold">GOLDBET</span> <span class="dl">PREDICTIVE</span></div>
+      <span class="status-dot"></span>
+    </div>
+    <div id="league-info" style="font-size: 0.65rem; color: var(--text-dim);">CARICAMENTO...</div>
+  </div>
+
+  <!-- BARRA DI NAVIGAZIONE (TABS) -->
+  <div class="top-bar">
+    <button class="btn-tab active" onclick="switchTab('chaos')">LA MAPPA DEL CAOS</button>
+    <button class="btn-tab" onclick="switchTab('projections')">MONTE CARLO</button>
+    <button class="btn-tab" onclick="switchTab('xpts')">CLASSIFICA DI MERITO</button>
+    <button class="btn-tab" onclick="switchTab('form')">FORMA REALE</button>
+  </div>
+
+  <!-- CONTROL PANEL -->
+  <div class="control-panel">
+    <select id="league-selector" onchange="onLeagueChanged()"></select>
+    <button id="nitro-btn" class="btn-nitro" onclick="triggerNitro()" style="display: none;">NITRO SIM (2K)</button>
+  </div>
+
+  <!-- TABELLA DATI -->
+  <div class="table-container">
+    <table id="main-table">
+      <thead id="table-head"></thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+
+  <div id="loading" class="loading-container">Dati in caricamento...</div>
+  <div id="toast" class="toast"></div>
+
+  <script>
+    let activeTab = 'chaos';
+    let currentLeague = 'ARG';
+    let leagues = [];
+
+    // Inizializzazione della dashboard
+    async function init() {
+      try {
+        const res = await fetch('/api/leagues');
+        leagues = await res.json();
+        
+        const selector = document.getElementById('league-selector');
+        selector.innerHTML = '';
+        leagues.forEach(l => {
+          const opt = document.createElement('option');
+          opt.value = l.div;
+          opt.textContent = \`\${l.nazione} - \${l.descrizione}\`;
+          selector.appendChild(opt);
+        });
+
+        if (leagues.length > 0) {
+          currentLeague = leagues[0].div;
+          selector.value = currentLeague;
+        }
+
+        switchTab('chaos');
+      } catch (err) {
+        showToast("Errore di caricamento: " + err.message);
+      }
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.style.display = 'block';
+      setTimeout(() => { toast.style.display = 'none'; }, 4000);
+    }
+
+    function switchTab(tab) {
+      activeTab = tab;
+      document.querySelectorAll('.btn-tab').forEach(b => b.classList.remove('active'));
+      
+      const idx = ['chaos', 'projections', 'xpts', 'form'].indexOf(tab);
+      document.querySelectorAll('.btn-tab')[idx].classList.add('active');
+
+      const selectPanel = document.getElementById('league-selector');
+      const nitroBtn = document.getElementById('nitro-btn');
+
+      if (tab === 'chaos') {
+        selectPanel.style.display = 'none';
+        nitroBtn.style.display = 'none';
+      } else {
+        selectPanel.style.display = 'block';
+        nitroBtn.style.display = 'block';
+      }
+
+      loadData();
+    }
+
+    function onLeagueChanged() {
+      currentLeague = document.getElementById('league-selector').value;
+      loadData();
+    }
+
+    async function triggerNitro() {
+      const btn = document.getElementById('nitro-btn');
+      btn.textContent = 'RUNNING...';
+      btn.disabled = true;
+      showToast("Simulatore ad alte prestazioni avviato (2.000 iterazioni)...");
+
+      try {
+        const res = await fetch(\`/api/projections?league=\${currentLeague}&nitro=true\`);
+        const data = await res.json();
+        showToast("Simulazione completata e registrata nel database!");
+        if (activeTab === 'projections') {
+          renderProjections(data.results);
+        }
+      } catch (err) {
+        showToast("Errore durante la simulazione: " + err.message);
+      } finally {
+        btn.textContent = 'NITRO SIM (2K)';
+        btn.disabled = false;
+      }
+    }
+
+    async function loadData() {
+      const loading = document.getElementById('loading');
+      const tbody = document.getElementById('table-body');
+      const thead = document.getElementById('table-head');
+      
+      loading.style.display = 'block';
+      tbody.innerHTML = '';
+      thead.innerHTML = '';
+
+      const leagueInfo = document.getElementById('league-info');
+      const matched = leagues.find(l => l.div === currentLeague);
+      leagueInfo.textContent = activeTab === 'chaos' ? 'MAPPA GLOBAL' : (matched ? matched.descrizione : currentLeague);
+
+      try {
+        if (activeTab === 'chaos') {
+          const res = await fetch('/api/chaos-map');
+          const data = await res.json();
+          renderChaosMap(data);
+        } else if (activeTab === 'projections') {
+          const res = await fetch(\`/api/projections?league=\${currentLeague}\`);
+          const data = await res.json();
+          renderProjections(data.results || []);
+        } else if (activeTab === 'xpts') {
+          const res = await fetch(\`/api/expected-points?league=\${currentLeague}\`);
+          const data = await res.json();
+          renderExpectedPoints(data);
+        } else if (activeTab === 'form') {
+          const res = await fetch(\`/api/real-form?league=\${currentLeague}\`);
+          const data = await res.json();
+          renderRealForm(data);
+        }
+        loading.style.display = 'none';
+      } catch (err) {
+        loading.style.display = 'none';
+        showToast("Errore di caricamento dei dati: " + err.message);
+      }
+    }
+
+    // --- RENDERING TABELLE ---
+
+    function renderChaosMap(data) {
+      const thead = document.getElementById('table-head');
+      const tbody = document.getElementById('table-body');
+
+      thead.innerHTML = \`
+        <tr>
+          <th style="width: 80px;">LEGA</th>
+          <th>NAZIONE</th>
+          <th>DESCRIZIONE</th>
+          <th style="width: 80px;">CAOS %</th>
+        </tr>
+      \`;
+
+      if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="neutral-dim">Nessun dato sufficiente (min. 15 partite).</td></tr>';
+        return;
+      }
+
+      data.forEach(item => {
+        let colorClass = 'neon-green';
+        if (item.chaos_index > 70) colorClass = 'neon-red';
+        else if (item.chaos_index > 55) colorClass = 'neon-orange';
+
+        tbody.innerHTML += \`
+          <tr>
+            <td>\${item.league}</td>
+            <td style="text-align: left;">\${item.nazione}</td>
+            <td style="text-align: left;">\${item.descrizione}</td>
+            <td class="\${colorClass} font-mono">\${item.chaos_index}%</td>
+          </tr>
+        \`;
+      });
+    }
+
+    function renderProjections(data) {
+      const thead = document.getElementById('table-head');
+      const tbody = document.getElementById('table-body');
+
+      thead.innerHTML = \`
+        <tr>
+          <th style="width: 110px;">TEAM</th>
+          <th>xPTS</th>
+          <th>SCUD</th>
+          <th>UCL</th>
+          <th>UEL</th>
+          <th>UECL</th>
+          <th>PROM</th>
+          <th>PLAYO</th>
+          <th>PLAYU</th>
+          <th>RETR</th>
+        </tr>
+      \`;
+
+      if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="neutral-dim">Nessuna proiezione salvata. Premi NITRO SIM per generare.</td></tr>';
+        return;
+      }
+
+      data.forEach(item => {
+        tbody.innerHTML += \`
+          <tr>
+            <td>\${item.squadra}</td>
+            <td class="neon-cyan font-mono">\${item.xpts_mediana.toFixed(1)}</td>
+            <td class="\${item.scudetto_prob > 50 ? 'neon-gold' : 'neutral-dim'} font-mono">\${item.scudetto_prob.toFixed(1)}%</td>
+            <td class="\${item.ucl_prob > 50 ? 'neon-cyan' : 'neutral-dim'} font-mono">\${item.ucl_prob.toFixed(1)}%</td>
+            <td class="\${item.uel_prob > 50 ? 'neon-orange' : 'neutral-dim'} font-mono">\${item.uel_prob.toFixed(1)}%</td>
+            <td class="\${item.uecl_prob > 50 ? 'neon-green' : 'neutral-dim'} font-mono">\${item.uecl_prob.toFixed(1)}%</td>
+            <td class="\${item.promo_prob > 50 ? 'neon-green' : 'neutral-dim'} font-mono">\${item.promo_prob.toFixed(1)}%</td>
+            <td class="\${item.playoff_prob > 50 ? 'neon-purple' : 'neutral-dim'} font-mono">\${item.playoff_prob.toFixed(1)}%</td>
+            <td class="\${item.playout_prob > 50 ? 'neon-purple' : 'neutral-dim'} font-mono">\${item.playout_prob.toFixed(1)}%</td>
+            <td class="\${item.retro_prob > 50 ? 'neon-red' : 'neutral-dim'} font-mono">\${item.retro_prob.toFixed(1)}%</td>
+          </tr>
+        \`;
+      });
+    }
+
+    function renderExpectedPoints(data) {
+      const thead = document.getElementById('table-head');
+      const tbody = document.getElementById('table-body');
+
+      thead.innerHTML = \`
+        <tr>
+          <th style="width: 110px;">TEAM</th>
+          <th>PG</th>
+          <th>PUNTI REALI</th>
+          <th>xPTS</th>
+          <th>DIFF</th>
+        </tr>
+      \`;
+
+      if (data.length === 0 || data.error) {
+        tbody.innerHTML = \`<tr><td colspan="5" class="neutral-dim">\${data.error || 'Nessun dato.'}</td></tr>\`;
+        return;
+      }
+
+      data.forEach(item => {
+        const isOverperforming = item.diff > 0;
+        const diffClass = isOverperforming ? 'neon-red' : (item.diff < 0 ? 'neon-green' : 'neutral-dim');
+        const sign = isOverperforming ? '+' : '';
+
+        tbody.innerHTML += \`
+          <tr>
+            <td>\${item.team}</td>
+            <td class="font-mono">\${item.played}</td>
+            <td class="font-mono">\${item.actualPoints}</td>
+            <td class="neon-cyan font-mono">\${item.expectedPoints.toFixed(2)}</td>
+            <td class="\${diffClass} font-mono">\${sign}\${item.diff}</td>
+          </tr>
+        \`;
+      });
+    }
+
+    function renderRealForm(data) {
+      const thead = document.getElementById('table-head');
+      const tbody = document.getElementById('table-body');
+
+      thead.innerHTML = \`
+        <tr>
+          <th style="width: 110px;">TEAM</th>
+          <th>PG</th>
+          <th>GOL FATTI</th>
+          <th>EXP FATTI</th>
+          <th>SHOCK ATT</th>
+          <th>GOL SUBITI</th>
+          <th>EXP SUB</th>
+          <th>SHOCK DIF</th>
+        </tr>
+      \`;
+
+      if (data.length === 0 || data.error) {
+        tbody.innerHTML = \`<tr><td colspan="8" class="neutral-dim">\${data.error || 'Nessun dato.'}</td></tr>\`;
+        return;
+      }
+
+      data.forEach(item => {
+        const attClass = item.ratingFormaAttacco > 0 ? 'neon-green' : (item.ratingFormaAttacco < 0 ? 'neon-red' : 'neutral-dim');
+        const difClass = item.ratingFormaDifesa > 0 ? 'neon-green' : (item.ratingFormaDifesa < 0 ? 'neon-red' : 'neutral-dim');
+
+        tbody.innerHTML += \`
+          <tr>
+            <td>\${item.team}</td>
+            <td class="font-mono">\${item.partiteG}</td>
+            <td class="font-mono">\${item.actualGoalsScored}</td>
+            <td class="neutral-dim font-mono">\${item.expectedGoalsScored}</td>
+            <td class="\${attClass} font-mono">\${item.ratingFormaAttacco > 0 ? '+' : ''}\${item.ratingFormaAttacco}</td>
+            <td class="font-mono">\${item.actualGoalsConceded}</td>
+            <td class="neutral-dim font-mono">\${item.expectedGoalsConceded}</td>
+            <td class="\${difClass} font-mono">\${item.ratingFormaDifesa > 0 ? '+' : ''}\${item.ratingFormaDifesa}</td>
+          </tr>
+        \`;
+      });
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
+`;
