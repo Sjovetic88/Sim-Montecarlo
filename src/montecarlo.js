@@ -1,7 +1,7 @@
 /**
  * GOLDBET SIMULATOR v1.0 - MODULO 4: PREDICTIVE INTELLIGENCE SUITE
  * 
- * Architettura Monolito Serverless:
+ * Sviluppato come "Monolito Serverless" (Strada B):
  * - "/" o "/dashboard" : Dashboard HTML/CSS/JS (Tailwind, OLED Black)
  * - "/api/leagues"     : Elenco delle leghe configurate
  * - "/api/projections" : Simulazioni Monte Carlo (10.000 iterazioni standard/nitro)
@@ -99,13 +99,13 @@ export default {
     }
   },
 
-  // Daemon orario (Cron Trigger): simula a rotazione la lega con aggiornamento più vecchio
+  // Cron Trigger orario per calcolo differito a 10.000 iterazioni
   async scheduled(event, env, ctx) {
     ctx.waitUntil(handleScheduledSimulation(env));
   }
 };
 
-// --- FUNZIONI DI SUPPORTO E METODI AUSILIARI ---
+// --- FUNZIONI DI SUPPORTO E CALCOLI AUSILIARI ---
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -144,7 +144,7 @@ async function getCurrentSeason(league, env) {
   return res?.current_season || null;
 }
 
-// --- CORE ENGINE 1: SIMULATORE MONTE CARLO (CON SPLIT REALE E TENSIONE AGONISTICA) ---
+// --- CORE ENGINE 1: SIMULATORE MONTE CARLO (CON ESCLUSIONE SQUADRE INATTIVE) ---
 
 async function runMonteCarloSimulation(league, iterations, env) {
   const rules = await env.DB_ARCHIVIO.prepare(
@@ -157,17 +157,38 @@ async function runMonteCarloSimulation(league, iterations, env) {
   ).bind(league).first();
   const rho = calibration?.current_rho || 0;
 
+  const currentSeason = await getCurrentSeason(league, env);
+  if (!currentSeason) return { results: [], message: "Nessun match disputato per questa lega." };
+
+  // Identificazione dinamica dei soli club attivi nella stagione corrente (Risolve il Bug di Colon)
+  const activeTeamsRes = await env.DB_ARCHIVIO.prepare(`
+    SELECT DISTINCT ht.name as team_name
+    FROM matches m
+    JOIN teams ht ON m.home_team_id = ht.id
+    WHERE m.div = ? AND m.season = ?
+    UNION
+    SELECT DISTINCT at.name as team_name
+    FROM matches m
+    JOIN teams at ON m.away_team_id = at.id
+    WHERE m.div = ? AND m.season = ?
+  `).bind(league, currentSeason, league, currentSeason).all();
+
+  const activeTeamNames = new Set(activeTeamsRes.results.map(r => (r.team_name || "").toUpperCase().trim()));
+
   const teamRows = await env.DB_ARCHIVIO.prepare(
     "SELECT team_name, elo, alpha, beta, h_factor FROM team_ratings WHERE current_div = ?"
   ).bind(league).all();
-  if (!teamRows.results || teamRows.results.length === 0) {
-    return { results: [], message: "Nessun rating calcolato per la lega: " + league };
+  
+  // Filtriamo mantenendo solo le squadre attive nella stagione in corso
+  const teams = teamRows.results.filter(t => activeTeamNames.has((t.team_name || "").toUpperCase().trim()));
+  
+  if (teams.length === 0) {
+    return { results: [], message: "Nessun club attivo calcolato per la lega: " + league };
   }
 
-  const teams = teamRows.results;
   const teamMap = new Map();
   teams.forEach(t => {
-    teamMap.set(t.team_name.toUpperCase().trim(), {
+    teamMap.set((t.team_name || "").toUpperCase().trim(), {
       name: t.team_name,
       elo: t.elo,
       alpha: t.alpha,
@@ -175,9 +196,6 @@ async function runMonteCarloSimulation(league, iterations, env) {
       hFactor: t.h_factor || 1.15
     });
   });
-
-  const currentSeason = await getCurrentSeason(league, env);
-  if (!currentSeason) return { results: [], message: "Nessun match disputato per questa lega." };
 
   const playedMatches = await env.DB_ARCHIVIO.prepare(`
     SELECT 
@@ -195,12 +213,12 @@ async function runMonteCarloSimulation(league, iterations, env) {
 
   const actualStandings = {};
   teams.forEach(t => {
-    actualStandings[t.team_name.toUpperCase().trim()] = { points: 0, goalsScored: 0, goalsConceded: 0, played: 0 };
+    actualStandings[(t.team_name || "").toUpperCase().trim()] = { points: 0, goalsScored: 0, goalsConceded: 0, played: 0 };
   });
 
   playedMatches.results.forEach(m => {
-    const homeKey = m.hometeam.toUpperCase().trim();
-    const awayKey = m.awayteam.toUpperCase().trim();
+    const homeKey = (m.hometeam || "").toUpperCase().trim();
+    const awayKey = (m.awayteam || "").toUpperCase().trim();
 
     if (actualStandings[homeKey] && actualStandings[awayKey]) {
       actualStandings[homeKey].played++;
@@ -221,15 +239,14 @@ async function runMonteCarloSimulation(league, iterations, env) {
     }
   });
 
-  // Generazione del calendario rimanente per sottrazione
-  const playedPairs = new Set(playedMatches.results.map(m => `${m.hometeam.toUpperCase().trim()}||${m.awayteam.toUpperCase().trim()}`));
+  const playedPairs = new Set(playedMatches.results.map(m => `${(m.hometeam || "").toUpperCase().trim()}||${(m.awayteam || "").toUpperCase().trim()}`));
   const remainingCalendar = [];
   
   for (let i = 0; i < teams.length; i++) {
     for (let j = 0; j < teams.length; j++) {
       if (i === j) continue;
-      const home = teams[i].team_name.toUpperCase().trim();
-      const away = teams[j].team_name.toUpperCase().trim();
+      const home = (teams[i].team_name || "").toUpperCase().trim();
+      const away = (teams[j].team_name || "").toUpperCase().trim();
       if (!playedPairs.has(`${home}||${away}`)) {
         remainingCalendar.push({ home, away });
       }
@@ -247,20 +264,20 @@ async function runMonteCarloSimulation(league, iterations, env) {
 
   const stats = {};
   teams.forEach(t => {
-    stats[t.team_name.toUpperCase().trim()] = {
+    stats[(t.team_name || "").toUpperCase().trim()] = {
       name: t.team_name,
       scudetto: 0, ucl: 0, uel: 0, uecl: 0, promo: 0, retro: 0, playoff: 0, playout: 0,
       totalPoints: 0
     };
   });
 
-  const numTeams = rules.num_squadre;
+  const numTeams = teams.length; // Basato su club attivi reali
   const isPointHalvingLeague = (league.startsWith("B") || league.startsWith("AUT"));
 
   for (let sim = 0; sim < iterations; sim++) {
     const simStandings = {};
     teams.forEach(t => {
-      const key = t.team_name.toUpperCase().trim();
+      const key = (t.team_name || "").toUpperCase().trim();
       simStandings[key] = { 
         points: actualStandings[key].points,
         goalsScored: actualStandings[key].goalsScored,
@@ -269,7 +286,7 @@ async function runMonteCarloSimulation(league, iterations, env) {
       };
     });
 
-    // 1. Fase Standard (Fino alla soglia di split o fine anno)
+    // 1. Fase Standard
     for (const match of resolvedCalendar) {
       if (rules.soglia_split > 0 && simStandings[match.homeKey].played >= rules.soglia_split) {
         continue; 
@@ -277,7 +294,7 @@ async function runMonteCarloSimulation(league, iterations, env) {
       simulateResolvedMatch(match, simStandings, rho, rules.giornate_totali, false);
     }
 
-    // 2. Fase Split Reale (Opzione B)
+    // 2. Fase Split Reale (Opzione B senza sovraccarichi)
     if (rules.soglia_split > 0) {
       const midStandings = Object.keys(simStandings).map(key => ({
         key,
@@ -294,11 +311,9 @@ async function runMonteCarloSimulation(league, iterations, env) {
         });
       }
 
-      // Creazione del mini-calendario di scontri diretti interni tra le squadre del proprio gruppo
       const poolTeams = Array.from(midTopGroup);
       const bottomTeams = Object.keys(simStandings).filter(k => !midTopGroup.has(k));
 
-      // Generazione dinamica di una fase a gruppi aggiuntiva
       simulateSplitPool(poolTeams, simStandings, teamMap, rho, rules.giornate_totali);
       simulateSplitPool(bottomTeams, simStandings, teamMap, rho, rules.giornate_totali);
     }
@@ -372,90 +387,26 @@ async function runMonteCarloSimulation(league, iterations, env) {
   return { league, simulated_matches_remaining: resolvedCalendar.length, iterations, results: bulkData };
 }
 
-// Generazione e simulazione del mini-calendario play-off dello Split
+// Generazione e simulazione del mini-calendario play-off dello Split (Bug 4 Risolto)
 function simulateSplitPool(pool, standings, teamMap, rho, maxGames) {
-  const gamesToPlay = pool.length - 1; 
-  for (let round = 0; round < 2; round++) { // Andata e Ritorno
-    for (let i = 0; i < pool.length; i++) {
-      for (let j = 0; j < pool.length; j++) {
-        if (i === j) continue;
-        const homeKey = pool[i];
-        const awayKey = pool[j];
-        
-        const match = {
-          homeKey,
-          awayKey,
-          homeObj: teamMap.get(homeKey),
-          awayObj: teamMap.get(awayKey)
-        };
-        simulateResolvedMatch(match, standings, rho, maxGames, true);
-      }
+  for (let i = 0; i < pool.length; i++) {
+    for (let j = 0; j < pool.length; j++) {
+      if (i === j) continue;
+      const homeKey = pool[i];
+      const awayKey = pool[j];
+      
+      const match = {
+        homeKey,
+        awayKey,
+        homeObj: teamMap.get(homeKey),
+        awayObj: teamMap.get(awayKey)
+      };
+      simulateResolvedMatch(match, standings, rho, maxGames, true);
     }
   }
 }
 
-function simulateResolvedMatch(match, standings, rho, maxGames, isSplitPhase) {
-  const home = match.homeObj;
-  const away = match.awayObj;
-
-  let alphaH = home.alpha;
-  let betaH = home.beta;
-  let alphaA = away.alpha;
-  let betaA = away.beta;
-
-  const eloDiff = home.elo - away.elo;
-  const eloScale = 1 + eloDiff * 0.0002;
-
-  let lambda = alphaH * betaA * home.hFactor * eloScale;
-  let mu = (alphaA * betaH) / eloScale;
-
-  lambda = Math.max(0.05, Math.min(8.0, lambda));
-  mu = Math.max(0.05, Math.min(8.0, mu));
-
-  // Motivazione dinamica legata allo stato della classifica
-  const gamesLeftH = maxGames - standings[match.homeKey].played;
-  if (gamesLeftH <= 6 || isSplitPhase) {
-    const hPoints = standings[match.homeKey].points;
-    const aPoints = standings[match.awayKey].points;
-    if (Math.abs(hPoints - aPoints) < 6) {
-      lambda *= 1.07; // Incremento tensione scontro diretto (+7%)
-    } else if (hPoints > 44 && hPoints < 52) {
-      lambda *= 0.90; // "Vacanza" mentale per obiettivi raggiunti (-10%)
-    }
-  }
-
-  const homeGoals = drawPoisson(lambda);
-  const awayGoals = drawPoisson(mu);
-
-  let finalHomeGoals = homeGoals;
-  let finalAwayGoals = awayGoals;
-  if (homeGoals <= 1 && awayGoals <= 1) {
-    const tau = getDixonColesTau(homeGoals, awayGoals, lambda, mu, rho);
-    if (Math.random() > tau) {
-      if (Math.random() > 0.5) {
-        finalHomeGoals = finalAwayGoals;
-      }
-    }
-  }
-
-  standings[match.homeKey].played++;
-  standings[match.awayKey].played++;
-  standings[match.homeKey].goalsScored += finalHomeGoals;
-  standings[match.homeKey].goalsConceded += finalAwayGoals;
-  standings[match.awayKey].goalsScored += finalAwayGoals;
-  standings[match.awayKey].goalsConceded += finalHomeGoals;
-
-  if (finalHomeGoals > finalAwayGoals) {
-    standings[match.homeKey].points += 3;
-  } else if (finalAwayGoals > finalHomeGoals) {
-    standings[match.awayKey].points += 3;
-  } else {
-    standings[match.homeKey].points += 1;
-    standings[match.awayKey].points += 1;
-  }
-}
-
-// --- CORE ENGINE 2: CLASSIFICA DI MERITO (XG E METRICHE TOTALI/CASA/TRASFERTA) ---
+// --- CORE ENGINE 2: CLASSIFICA DI MERITO ---
 
 async function calculateExpectedPoints(league, env) {
   const currentSeason = await getCurrentSeason(league, env);
@@ -474,12 +425,29 @@ async function calculateExpectedPoints(league, env) {
     WHERE m.div = ? AND m.season = ?
   `).bind(league, currentSeason).all();
 
+  // Filtriamo solo i club attivi anche nella classifica di merito
+  const activeTeamsRes = await env.DB_ARCHIVIO.prepare(`
+    SELECT DISTINCT ht.name as team_name
+    FROM matches m
+    JOIN teams ht ON m.home_team_id = ht.id
+    WHERE m.div = ? AND m.season = ?
+    UNION
+    SELECT DISTINCT at.name as team_name
+    FROM matches m
+    JOIN teams at ON m.away_team_id = at.id
+    WHERE m.div = ? AND m.season = ?
+  `).bind(league, currentSeason, league, currentSeason).all();
+
+  const activeTeamNames = new Set(activeTeamsRes.results.map(r => (r.team_name || "").toUpperCase().trim()));
+
   const teamRows = await env.DB_ARCHIVIO.prepare(
     "SELECT team_name, elo, alpha, beta, h_factor FROM team_ratings WHERE current_div = ?"
   ).bind(league).all();
 
+  const filteredTeams = teamRows.results.filter(t => activeTeamNames.has((t.team_name || "").toUpperCase().trim()));
+
   const teamMap = new Map();
-  teamRows.results.forEach(t => teamMap.set(t.team_name.toUpperCase().trim(), t));
+  filteredTeams.forEach(t => teamMap.set((t.team_name || "").toUpperCase().trim(), t));
 
   const calibration = await env.DB_PRONOSTICI.prepare(
     "SELECT current_rho FROM parametri_campionato WHERE campionato = ?"
@@ -487,16 +455,16 @@ async function calculateExpectedPoints(league, env) {
   const rho = calibration?.current_rho || 0;
 
   const table = {};
-  teamRows.results.forEach(t => {
-    const key = t.team_name.toUpperCase().trim();
+  filteredTeams.forEach(t => {
+    const key = (t.team_name || "").toUpperCase().trim();
     const cleanName = t.team_name;
     const createSub = () => ({ played: 0, wins: 0, draws: 0, losses: 0, gf: 0, gs: 0, points: 0, expectedPoints: 0, xgf: 0, xgs: 0, diff: 0 });
     table[key] = { team: cleanName, tot: createSub(), home: createSub(), away: createSub() };
   });
 
   matches.results.forEach(m => {
-    const homeKey = m.hometeam.toUpperCase().trim();
-    const awayKey = m.awayteam.toUpperCase().trim();
+    const homeKey = (m.hometeam || "").toUpperCase().trim();
+    const awayKey = (m.awayteam || "").toUpperCase().trim();
 
     const home = teamMap.get(homeKey);
     const away = teamMap.get(awayKey);
@@ -507,7 +475,6 @@ async function calculateExpectedPoints(league, env) {
     const lambda = Math.max(0.05, home.alpha * away.beta * (home.h_factor || 1.15) * eloScale);
     const mu = Math.max(0.05, (away.alpha * home.beta) / eloScale);
 
-    // Calcolo probabilità esatte Dixon-Coles
     let pWin = 0, pDraw = 0, pLoss = 0;
     const maxG = 5;
     const pHG = new Array(maxG + 1).fill(0).map((_, i) => (Math.pow(lambda, i) * Math.exp(-lambda)) / factorial(i));
@@ -554,17 +521,16 @@ async function calculateExpectedPoints(league, env) {
 
     if (m.ftr === "H") {
       h.tot.wins++; h.tot.points += 3; h.home.wins++; h.home.points += 3;
-      a.tot.losses++;
+      a.tot.losses++; a.away.losses++;
     } else if (m.ftr === "A") {
       a.tot.wins++; a.tot.points += 3; a.away.wins++; a.away.points += 3;
-      h.tot.losses++;
+      h.tot.losses++; h.home.losses++;
     } else {
       h.tot.draws++; h.tot.points += 1; h.home.draws++; h.home.points += 1;
       a.tot.draws++; a.tot.points += 1; a.away.draws++; a.away.points += 1;
     }
   });
 
-  // Normalizzazione differenze e arrotondamenti
   Object.keys(table).forEach(k => {
     const t = table[k];
     const adjust = (obj) => {
@@ -586,10 +552,9 @@ function factorial(n) {
   return r;
 }
 
-// --- CORE ENGINE 3: INDICE DI SORPRESA (MAPPA DEL CAOS CON POP-UP) ---
+// --- CORE ENGINE 3: INDICE DI SORPRESA (La Mappa del Caos) ---
 
 async function calculateChaosMap(env) {
-  // Ottimizzazione estrema: calcoliamo solo le leghe attive (evita timeout della CPU su 36 cicli)
   const activeLeaguesRes = await env.DB_ARCHIVIO.prepare(`
     SELECT DISTINCT rl.div, rl.nazione, rl.descrizione 
     FROM regole_leghe rl
@@ -622,7 +587,7 @@ async function calculateChaosMap(env) {
     ).bind(league.div).all();
 
     const teamMap = new Map();
-    teamRows.results.forEach(t => teamMap.set(t.team_name.toUpperCase().trim(), t));
+    teamRows.results.forEach(t => teamMap.set((t.team_name || "").toUpperCase().trim(), t));
 
     let totalShock = 0;
     let count = 0;
@@ -631,8 +596,8 @@ async function calculateChaosMap(env) {
     const upsetTracker = {};
 
     matches.results.forEach(m => {
-      const homeKey = m.hometeam.toUpperCase().trim();
-      const awayKey = m.awayteam.toUpperCase().trim();
+      const homeKey = (m.hometeam || "").toUpperCase().trim();
+      const awayKey = (m.awayteam || "").toUpperCase().trim();
 
       const home = teamMap.get(homeKey);
       const away = teamMap.get(awayKey);
@@ -656,7 +621,6 @@ async function calculateChaosMap(env) {
       totalShock += shock;
       count++;
 
-      // Tracciamento del match più folle della stagione
       if (shock > maxShockVal) {
         maxShockVal = shock;
         shockingMatch = {
@@ -667,7 +631,6 @@ async function calculateChaosMap(env) {
         };
       }
 
-      // Sfascia-Pronostici: accumuliamo il shock di chi vince a sorpresa
       if (shock > 0.70) {
         const victor = m.ftr === "H" ? home.team_name : (m.ftr === "A" ? away.team_name : null);
         if (victor) {
@@ -676,7 +639,6 @@ async function calculateChaosMap(env) {
       }
     });
 
-    // Trova l'Upset King della lega
     let bracketBuster = "Nessuno";
     let maxUpsetScore = 0;
     Object.keys(upsetTracker).forEach(team => {
@@ -689,8 +651,8 @@ async function calculateChaosMap(env) {
     if (count > 0) {
       result.push({
         league: league.div,
-        nazione: league.nazione,
-        descrizione: league.descrizione,
+        nazione: league.nazione || "",
+        descrizione: league.descrizione || "",
         chaos_index: Number((totalShock / count * 100).toFixed(1)),
         matches_analyzed: count,
         most_shocking_match: shockingMatch,
@@ -715,7 +677,7 @@ async function calculateRealForm(league, env) {
   const teamMap = new Map();
   const formTable = {};
   teamRows.results.forEach(t => {
-    const key = t.team_name.toUpperCase().trim();
+    const key = (t.team_name || "").toUpperCase().trim();
     teamMap.set(key, t);
     formTable[key] = { team: t.team_name, matches: [] };
   });
@@ -733,10 +695,9 @@ async function calculateRealForm(league, env) {
     ORDER BY m.date DESC
   `).bind(league, currentSeason).all();
 
-  // Accumuliamo le differenze per ogni partita
   matches.results.forEach(m => {
-    const homeKey = m.hometeam.toUpperCase().trim();
-    const awayKey = m.awayteam.toUpperCase().trim();
+    const homeKey = (m.hometeam || "").toUpperCase().trim();
+    const awayKey = (m.awayteam || "").toUpperCase().trim();
 
     const home = teamMap.get(homeKey);
     const away = teamMap.get(awayKey);
@@ -769,10 +730,9 @@ async function calculateRealForm(league, env) {
     }
   });
 
-  // Pesi temporali professionali (Decadimento esponenziale di rilievo)
   const weights = [0.35, 0.25, 0.20, 0.12, 0.08];
 
-  return Object.values(formTable).map(t => {
+  return Object.values(formTable).filter(t => t.matches.length > 0).map(t => {
     let weightedAtt = 0;
     let weightedDif = 0;
     let weightSum = 0;
@@ -787,7 +747,6 @@ async function calculateRealForm(league, env) {
     const attRating = weightSum > 0 ? (weightedAtt / weightSum) : 0;
     const difRating = weightSum > 0 ? (weightedDif / weightSum) : 0;
 
-    // Calcolo delle statistiche pure complessive delle 5 partite per visualizzazione
     const sumActualScored = t.matches.reduce((acc, curr) => acc + curr.actualScored, 0);
     const sumExpectedScored = t.matches.reduce((acc, curr) => acc + curr.expectedScored, 0);
     const sumActualConceded = t.matches.reduce((acc, curr) => acc + curr.actualConceded, 0);
@@ -886,7 +845,7 @@ const HTML_DASHBOARD = `
     <button id="nitro-btn" class="bg-amber-500 hover:bg-amber-400 text-black px-3 py-1.5 rounded text-[10px] font-black tracking-wider uppercase transition-all shrink-0" onclick="triggerNitro()">NITRO SIM (10K)</button>
   </div>
 
-  <!-- SUB-BARRA DI FILTRAGGIO (SOLO PER LA CLASSIFICA DI MERITO) -->
+  <!-- SUB-BARRA DI FILTRAGGIO (CLASSIFICA DI MERITO) -->
   <div class="p-2 flex gap-2 bg-zinc-900 border-b border-zinc-800 justify-center" id="merit-filters" style="display: none;">
     <button class="btn-filter bg-cyan-400 text-black px-3 py-1 rounded text-[9px] font-black uppercase" id="filter-tot" onclick="changeMeritScope('tot')">TOTALI</button>
     <button class="btn-filter bg-zinc-950 text-zinc-500 px-3 py-1 rounded text-[9px] font-black uppercase" id="filter-home" onclick="changeMeritScope('home')">CASA</button>
@@ -899,7 +858,7 @@ const HTML_DASHBOARD = `
     <span class="text-cyan-400" id="league-code">GLOBAL</span>
   </div>
 
-  <!-- DASHBOARD PRINCIPALE (TABELLA A 2 LIVELLI) -->
+  <!-- DASHBOARD PRINCIPALE -->
   <div class="m-3 overflow-x-auto rounded-lg border border-zinc-800 bg-black no-scrollbar">
     <table class="w-full border-collapse text-center">
       <thead id="table-head"></thead>
@@ -916,9 +875,9 @@ const HTML_DASHBOARD = `
       <div class="space-y-4">
         <div class="bg-zinc-900 p-4 rounded border border-zinc-800">
           <div class="text-[9px] text-zinc-500 uppercase tracking-widest font-black mb-1">🔥 SHOCK MATCH DELL'ANNO</div>
-          <div class="text-white font-black text-sm uppercase" id="modal-shock-match">-</div>
+          <div class="text-white font-black text-sm uppercase animate-pulse" id="modal-shock-match">-</div>
           <div class="text-[10px] text-zinc-400 mt-1">Risultato Reale: <span class="font-bold text-white" id="modal-shock-score">-</span></div>
-          <div class="text-[10px] text-cyan-400 mt-0.5">Probabilità di Esito del Modello: <span class="font-bold" id="modal-shock-prob">0%</span></div>
+          <div class="text-[10px] text-cyan-400 mt-0.5">Probabilità di Esito del Modello: <span class="font-bold text-white font-mono" id="modal-shock-prob">0%</span></div>
         </div>
 
         <div class="bg-zinc-900 p-4 rounded border border-zinc-800">
@@ -954,7 +913,9 @@ const HTML_DASHBOARD = `
         leagues.forEach(l => {
           const opt = document.createElement('option');
           opt.value = l.div;
-          opt.textContent = \`\${l.nazione.toUpperCase()} - \${l.descrizione.toUpperCase()}\`;
+          const nazioneSafe = (l.nazione || l.div || "").toUpperCase();
+          const descrizioneSafe = (l.descrizione || "").toUpperCase();
+          opt.textContent = \`\${nazioneSafe} - \${descrizioneSafe}\`;
           selector.appendChild(opt);
         });
 
@@ -1054,7 +1015,8 @@ const HTML_DASHBOARD = `
         leagueInfo.textContent = 'MAPPA GLOBALE DEL DISORDINE';
         leagueCode.textContent = 'GLOBAL';
       } else {
-        leagueInfo.textContent = matched ? matched.descrizione : currentLeague;
+        const descrizioneSafe = matched ? (matched.descrizione || "").toUpperCase() : currentLeague;
+        leagueInfo.textContent = descrizioneSafe;
         leagueCode.textContent = currentLeague;
       }
 
@@ -1096,7 +1058,8 @@ const HTML_DASHBOARD = `
       const item = rawChaosData.find(d => d.league === league);
       if (!item) return;
 
-      document.getElementById('modal-title').textContent = \`Dati Caos - \${item.descrizione.toUpperCase()}\`;
+      const descrizioneSafe = (item.descrizione || "").toUpperCase();
+      document.getElementById('modal-title').textContent = \`Dati Caos - \s\${descrizioneSafe}\`;
       
       const mMatch = item.most_shocking_match;
       document.getElementById('modal-shock-match').textContent = \`\${mMatch.home} vs \${mMatch.away}\`;
@@ -1120,14 +1083,14 @@ const HTML_DASHBOARD = `
 
       thead.innerHTML = \`
         <tr class="bg-zinc-900 text-cyan-400 text-[10px] font-black border-b border-zinc-700">
-          <th colspan="3" class="p-2 border-r border-zinc-800 text-left sticky-col">REGISTRI DI ANALISI GENERALI</th>
-          <th colspan="1" class="p-2">METRICHE</th>
+          <th colspan="3" class="p-1 border-r border-zinc-800 text-left sticky-col">REGISTRI DI ANALISI GENERALI</th>
+          <th colspan="1" class="p-1">METRICHE</th>
         </tr>
         <tr class="bg-zinc-950 text-zinc-500 text-[9px] uppercase tracking-widest border-b border-zinc-800">
-          <th class="p-2 text-left sticky-col">LEGA</th>
-          <th class="p-2 text-left">NAZIONE</th>
-          <th class="p-2 text-left border-r border-zinc-800">DESCRIZIONE</th>
-          <th class="p-2">CAOS INDEX</th>
+          <th class="p-1 text-left sticky-col">LEGA</th>
+          <th class="p-1 text-left">NAZIONE</th>
+          <th class="p-1 text-left border-r border-zinc-800">DESCRIZIONE</th>
+          <th class="p-1">CAOS INDEX</th>
         </tr>
       \`;
 
@@ -1141,12 +1104,15 @@ const HTML_DASHBOARD = `
         if (item.chaos_index > 70) chaosColor = 'text-red-500';
         else if (item.chaos_index > 55) chaosColor = 'text-amber-500';
 
+        const nazioneSafe = (item.nazione || "").toUpperCase();
+        const descrizioneSafe = (item.descrizione || "").toUpperCase();
+
         tbody.innerHTML += \`
-          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40 cursor-pointer" onclick="openChaosModal('\${item.league}')">
-            <td class="p-2 text-left font-black text-white text-[10.5px] uppercase sticky-col">\${item.league}</td>
-            <td class="p-2 text-left text-zinc-400 font-bold">\${item.nazione.toUpperCase()}</td>
-            <td class="p-2 text-left text-zinc-400 border-r border-zinc-900 text-ellipsis overflow-hidden whitespace-nowrap">\${item.descrizione.toUpperCase()}</td>
-            <td class="p-2 font-bold \${chaosColor} font-mono">\${item.chaos_index}%</td>
+          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40 cursor-pointer text-[10.5px]" onclick="openChaosModal('\${item.league}')">
+            <td class="p-1.5 text-left font-black text-white uppercase sticky-col">\${item.league}</td>
+            <td class="p-1.5 text-left text-zinc-400 font-bold">\${nazioneSafe}</td>
+            <td class="p-1.5 text-left text-zinc-400 border-r border-zinc-900 text-ellipsis overflow-hidden whitespace-nowrap">\${descrizioneSafe}</td>
+            <td class="p-1.5 font-bold \${chaosColor} font-mono">\${item.chaos_index}%</td>
           </tr>
         \`;
       });
@@ -1158,21 +1124,21 @@ const HTML_DASHBOARD = `
 
       thead.innerHTML = \`
         <tr class="bg-zinc-900 text-cyan-400 text-[10px] font-black border-b border-zinc-700">
-          <th colspan="2" class="p-2 border-r border-zinc-800 text-left sticky-col">PROIEZIONE STANDARD</th>
-          <th colspan="4" class="p-2 border-r border-zinc-800">PIAZZAMENTI COPA</th>
-          <th colspan="4" class="p-2">COMPETIZIONI DI LEGA</th>
+          <th colspan="2" class="p-1 border-r border-zinc-800 text-left sticky-col">PROIEZIONE STANDARD</th>
+          <th colspan="4" class="p-1 border-r border-zinc-800">PIAZZAMENTI COPA</th>
+          <th colspan="4" class="p-1">COMPETIZIONI DI LEGA</th>
         </tr>
         <tr class="bg-zinc-950 text-zinc-500 text-[9px] uppercase tracking-widest border-b border-zinc-800">
-          <th class="p-2 text-left sticky-col">SQUADRA</th>
-          <th class="p-2 border-r border-zinc-800">xPTS PROG</th>
-          <th class="p-2">🏆</th>
-          <th class="p-2">CHL</th>
-          <th class="p-2">UEL</th>
-          <th class="p-2 border-r border-zinc-800">UECL</th>
-          <th class="p-2">PROM.</th>
-          <th class="p-2">P.OFF</th>
-          <th class="p-2">P.OUT</th>
-          <th class="p-2">🔴</th>
+          <th class="p-1 text-left sticky-col">SQUADRA</th>
+          <th class="p-1 border-r border-zinc-800">xPTS PROG</th>
+          <th class="p-1">🏆</th>
+          <th class="p-1">CHL</th>
+          <th class="p-1">UEL</th>
+          <th class="p-1 border-r border-zinc-800">UECL</th>
+          <th class="p-1">PROM.</th>
+          <th class="p-1">P.OFF</th>
+          <th class="p-1">P.OUT</th>
+          <th class="p-1">🔴</th>
         </tr>
       \`;
 
@@ -1183,17 +1149,17 @@ const HTML_DASHBOARD = `
 
       data.forEach(item => {
         tbody.innerHTML += \`
-          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40">
-            <td class="p-2 text-left font-black text-white text-[10.5px] uppercase sticky-col">\${item.squadra}</td>
-            <td class="p-2 font-black text-cyan-400 border-r border-zinc-900 font-mono">\${item.xpts_mediana.toFixed(1)}</td>
-            <td class="p-2 font-bold \${item.scudetto_prob > 50 ? 'text-amber-400' : 'text-zinc-600'} font-mono">\${item.scudetto_prob.toFixed(1)}%</td>
-            <td class="p-2 font-bold \${item.ucl_prob > 50 ? 'text-cyan-400' : 'text-zinc-600'} font-mono">\${item.ucl_prob.toFixed(1)}%</td>
-            <td class="p-2 font-bold \${item.uel_prob > 50 ? 'text-orange-400' : 'text-zinc-600'} font-mono">\${item.uel_prob.toFixed(1)}%</td>
-            <td class="p-2 font-bold border-r border-zinc-900 \${item.uecl_prob > 50 ? 'text-emerald-400' : 'text-zinc-600'} font-mono">\${item.uecl_prob.toFixed(1)}%</td>
-            <td class="p-2 font-bold \${item.promo_prob > 50 ? 'text-emerald-400' : 'text-zinc-600'} font-mono">\${item.promo_prob.toFixed(1)}%</td>
-            <td class="p-2 font-bold \${item.playoff_prob > 50 ? 'text-purple-400' : 'text-zinc-600'} font-mono">\${item.playoff_prob.toFixed(1)}%</td>
-            <td class="p-2 font-bold \${item.playout_prob > 50 ? 'text-purple-400' : 'text-zinc-600'} font-mono">\${item.playout_prob.toFixed(1)}%</td>
-            <td class="p-2 font-bold \${item.retro_prob > 50 ? 'text-red-500' : 'text-zinc-600'} font-mono">\${item.retro_prob.toFixed(1)}%</td>
+          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40 text-[10.5px]">
+            <td class="p-1.5 text-left font-black text-white uppercase sticky-col">\ \${item.squadra}</td>
+            <td class="p-1.5 font-black text-cyan-400 border-r border-zinc-900 font-mono">\${item.xpts_mediana.toFixed(1)}</td>
+            <td class="p-1.5 font-bold \${item.scudetto_prob > 50 ? 'text-amber-400' : 'text-zinc-600'} font-mono">\${item.scudetto_prob.toFixed(1)}%</td>
+            <td class="p-1.5 font-bold \${item.ucl_prob > 50 ? 'text-cyan-400' : 'text-zinc-600'} font-mono">\${item.ucl_prob.toFixed(1)}%</td>
+            <td class="p-1.5 font-bold \${item.uel_prob > 50 ? 'text-orange-400' : 'text-zinc-600'} font-mono">\${item.uel_prob.toFixed(1)}%</td>
+            <td class="p-1.5 font-bold border-r border-zinc-900 \${item.uecl_prob > 50 ? 'text-emerald-400' : 'text-zinc-600'} font-mono">\${item.uecl_prob.toFixed(1)}%</td>
+            <td class="p-1.5 font-bold \${item.promo_prob > 50 ? 'text-emerald-400' : 'text-zinc-600'} font-mono">\${item.promo_prob.toFixed(1)}%</td>
+            <td class="p-1.5 font-bold \${item.playoff_prob > 50 ? 'text-purple-400' : 'text-zinc-600'} font-mono">\${item.playoff_prob.toFixed(1)}%</td>
+            <td class="p-1.5 font-bold \${item.playout_prob > 50 ? 'text-purple-400' : 'text-zinc-600'} font-mono">\${item.playout_prob.toFixed(1)}%</td>
+            <td class="p-1.5 font-bold \${item.retro_prob > 50 ? 'text-red-500' : 'text-zinc-600'} font-mono">\${item.retro_prob.toFixed(1)}%</td>
           </tr>
         \`;
       });
@@ -1205,21 +1171,21 @@ const HTML_DASHBOARD = `
 
       thead.innerHTML = \`
         <tr class="bg-zinc-900 text-cyan-400 text-[10px] font-black border-b border-zinc-700">
-          <th colspan="8" class="p-2 border-r border-zinc-800 text-left sticky-col">CLASSIFICA REALE STATISTICHE</th>
-          <th colspan="3" class="p-2">VALORI ATTESI E DIFFERENZE</th>
+          <th colspan="7" class="p-1 border-r border-zinc-800 text-left sticky-col">CLASSIFICA REALE STATISTICHE</th>
+          <th colspan="4" class="p-1">VALORI ATTESI E DIFFERENZE</th>
         </tr>
         <tr class="bg-zinc-950 text-zinc-500 text-[9px] uppercase tracking-widest border-b border-zinc-800">
-          <th class="p-2 text-left sticky-col">SQUADRA</th>
-          <th class="p-2">PT</th>
-          <th class="p-2">V</th>
-          <th class="p-2">N</th>
-          <th class="p-2">S</th>
-          <th class="p-2">GF</th>
-          <th class="p-2 border-r border-zinc-800">GS</th>
-          <th class="p-2">xPT</th>
-          <th class="p-2">xGF</th>
-          <th class="p-2">xGS</th>
-          <th class="p-2">DIFF</th>
+          <th class="p-1 text-left sticky-col">SQUADRA</th>
+          <th class="p-1">PT</th>
+          <th class="p-1">V</th>
+          <th class="p-1">N</th>
+          <th class="p-1">S</th>
+          <th class="p-1">GF</th>
+          <th class="p-1 border-r border-zinc-800">GS</th>
+          <th class="p-1">xPT</th>
+          <th class="p-1">xGF</th>
+          <th class="p-1">xGS</th>
+          <th class="p-1">DIFF</th>
         </tr>
       \`;
 
@@ -1228,7 +1194,6 @@ const HTML_DASHBOARD = `
         return;
       }
 
-      // Estraiamo il corretto blocco di scopatura (tot, home, away)
       const formatted = meritData.map(item => {
         const block = item[meritScope];
         return {
@@ -1252,18 +1217,18 @@ const HTML_DASHBOARD = `
         const sign = isOverperforming ? '+' : '';
 
         tbody.innerHTML += \`
-          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40">
-            <td class="p-2 text-left font-black text-white text-[10.5px] uppercase sticky-col">\${item.team}</td>
-            <td class="p-2 text-white font-black font-mono">\${item.points}</td>
-            <td class="p-2 text-zinc-400 font-mono">\${item.wins}</td>
-            <td class="p-2 text-zinc-400 font-mono">\${item.draws}</td>
-            <td class="p-2 text-zinc-400 font-mono">\${item.losses}</td>
-            <td class="p-2 text-zinc-400 font-mono">\${item.gf}</td>
-            <td class="p-2 text-zinc-400 border-r border-zinc-900 font-mono">\${item.gs}</td>
-            <td class="p-2 text-cyan-400 font-black font-mono">\${item.xpt.toFixed(2)}</td>
-            <td class="p-2 text-zinc-500 font-mono">\${item.xgf.toFixed(1)}</td>
-            <td class="p-2 text-zinc-500 font-mono">\${item.xgs.toFixed(1)}</td>
-            <td class="p-2 font-black font-mono \${diffClass}">\${sign}\${item.diff}</td>
+          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40 text-[10.5px]">
+            <td class="p-1.5 text-left font-black text-white uppercase sticky-col">\${item.team}</td>
+            <td class="p-1.5 text-white font-black font-mono">\${item.points}</td>
+            <td class="p-1.5 text-zinc-400 font-mono">\${item.wins}</td>
+            <td class="p-1.5 text-zinc-400 font-mono">\${item.draws}</td>
+            <td class="p-1.5 text-zinc-400 font-mono">\${item.losses}</td>
+            <td class="p-1.5 text-zinc-400 font-mono">\${item.gf}</td>
+            <td class="p-1.5 text-zinc-400 border-r border-zinc-900 font-mono">\${item.gs}</td>
+            <td class="p-1.5 text-cyan-400 font-black font-mono">\${item.xpt.toFixed(2)}</td>
+            <td class="p-1.5 text-zinc-500 font-mono">\\ \${item.xgf.toFixed(1)}</td>
+            <td class="p-1.5 text-zinc-500 font-mono">\${item.xgs.toFixed(1)}</td>
+            <td class="p-1.5 font-black font-mono \${diffClass}">\${sign}\${item.diff.toFixed(2)}</td>
           </tr>
         \`;
       });
@@ -1275,19 +1240,19 @@ const HTML_DASHBOARD = `
 
       thead.innerHTML = \`
         <tr class="bg-zinc-900 text-cyan-400 text-[10px] font-black border-b border-zinc-700">
-          <th colspan="2" class="p-2 border-r border-zinc-800 text-left sticky-col">DATI GENERALI</th>
-          <th colspan="3" class="p-2 border-r border-zinc-800">REPARTO ATTACCO (xG - PESATO)</th>
-          <th colspan="3" class="p-2">REPARTO DIFESA (xGA - PESATO)</th>
+          <th colspan="2" class="p-1 border-r border-zinc-800 text-left sticky-col">DATI GENERALI</th>
+          <th colspan="3" class="p-1 border-r border-zinc-800">REPARTO ATTACCO (xG - PESATO)</th>
+          <th colspan="3" class="p-1">REPARTO DIFESA (xGA - PESATO)</th>
         </tr>
         <tr class="bg-zinc-950 text-zinc-500 text-[9px] uppercase tracking-widest border-b border-zinc-800">
-          <th class="p-2 text-left sticky-col">SQUADRA</th>
-          <th class="p-2 border-r border-zinc-800">PG</th>
-          <th class="p-2">REALI</th>
-          <th class="p-2">ATTESI</th>
-          <th class="p-2 border-r border-zinc-800">RATING FORM</th>
-          <th class="p-2">REALI</th>
-          <th class="p-2">ATTESI</th>
-          <th class="p-2">RATING FORM</th>
+          <th class="p-1 text-left sticky-col">SQUADRA</th>
+          <th class="p-1 border-r border-zinc-800">PG</th>
+          <th class="p-1">REALI</th>
+          <th class="p-1">ATTESI</th>
+          <th class="p-1 border-r border-zinc-800">RATING FORM</th>
+          <th class="p-1">REALI</th>
+          <th class="p-1">ATTESI</th>
+          <th class="p-1">RATING FORM</th>
         </tr>
       \`;
 
@@ -1301,15 +1266,15 @@ const HTML_DASHBOARD = `
         const difClass = item.ratingFormaDifesa > 0 ? 'text-green-500' : (item.ratingFormaDifesa < 0 ? 'text-red-500' : 'text-zinc-500');
 
         tbody.innerHTML += \`
-          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40">
-            <td class="p-2 text-left font-black text-white text-[10.5px] uppercase sticky-col">\${item.team}</td>
-            <td class="p-2 text-zinc-400 border-r border-zinc-900 font-mono font-bold">\ \${item.partiteG}</td>
-            <td class="p-2 text-zinc-300 font-mono">\${item.actualGoalsScored}</td>
-            <td class="p-2 text-zinc-500 font-mono font-bold">\${item.expectedGoalsScored}</td>
-            <td class="p-2 font-black border-r border-zinc-900 font-mono \${attClass}">\${item.ratingFormaAttacco > 0 ? '+' : ''}\${item.ratingFormaAttacco}</td>
-            <td class="p-2 text-zinc-300 font-mono">\${item.actualGoalsConceded}</td>
-            <td class="p-2 text-zinc-500 font-mono font-bold">\${item.expectedGoalsConceded}</td>
-            <td class="p-2 font-black font-mono \${difClass}">\${item.ratingFormaDifesa > 0 ? '+' : ''}\${item.ratingFormaDifesa}</td>
+          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40 text-[10.5px]">
+            <td class="p-1.5 text-left font-black text-white uppercase sticky-col">\${item.team}</td>
+            <td class="p-1.5 text-zinc-400 border-r border-zinc-900 font-mono font-bold">\${item.partiteG}</td>
+            <td class="p-1.5 text-zinc-300 font-mono">\${item.actualGoalsScored}</td>
+            <td class="p-1.5 text-zinc-500 font-mono font-bold">\${item.expectedGoalsScored.toFixed(1)}</td>
+            <td class="p-1.5 font-black border-r border-zinc-900 font-mono \${attClass}">\${item.ratingFormaAttacco > 0 ? '+' : ''}\${item.ratingFormaAttacco.toFixed(2)}</td>
+            <td class="p-1.5 text-zinc-300 font-mono">\${item.actualGoalsConceded}</td>
+            <td class="p-1.5 text-zinc-500 font-mono font-bold">\${item.expectedGoalsConceded.toFixed(1)}</td>
+            <td class="p-1.5 font-black font-mono \${difClass}">\${item.ratingFormaDifesa > 0 ? '+' : ''}\${item.ratingFormaDifesa.toFixed(2)}</td>
           </tr>
         \`;
       });
