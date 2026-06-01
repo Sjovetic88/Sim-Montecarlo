@@ -1,8 +1,10 @@
 /**
  * GOLDBET ANALYST v1.0 - MODULO 4: PREDICTIVE INTELLIGENCE SUITE
  * 
+ * Identità Visiva: GOLDBET GUARDIAN (OLED Black, Tailwind CSS, Intestazioni a 2 Livelli)
+ * 
  * Sviluppato come "Monolito Serverless" (Strada B):
- * - "/" o "/dashboard" : Fornisce la Dashboard HTML/CSS/JS (OLED Black Style)
+ * - "/" o "/dashboard" : Fornisce la Dashboard HTML/CSS/JS (Tailwind, OLED Black)
  * - "/api/leagues"     : Elenco delle leghe configurate
  * - "/api/projections" : Simulazioni Monte Carlo (Standard / Nitro Mode)
  * - "/api/expected-points" : Expected Points (xPTS)
@@ -17,7 +19,7 @@ export default {
     const path = url.pathname;
 
     try {
-      // 0. Dashboard Grafica Principale (OLED Black / Neon Pulse)
+      // 0. Dashboard Grafica Principale (OLED Black / GOLDBET GUARDIAN Style)
       if (path === "/" || path === "/dashboard") {
         return new Response(HTML_DASHBOARD, {
           headers: { "Content-Type": "text/html; charset=utf-8" }
@@ -141,7 +143,7 @@ async function runDiagnostics(env) {
   return diagnostics;
 }
 
-// --- FUNZIONI DI COPERTURA E METODI AUSILIARI ---
+// --- FUNZIONI DI SUPPORTO E CALCOLI AUSILIARI ---
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -568,7 +570,7 @@ function factorial(n) {
   return r;
 }
 
-// --- CORE ENGINE 3: INDICE DI SORPRESA (Chaos Map) ---
+// --- CORE ENGINE 3: INDICE DI SORPRESA (La Mappa del Caos) ---
 
 async function calculateChaosMap(env) {
   const leaguesRes = await env.DB_ARCHIVIO.prepare("SELECT div, nazione, descrizione FROM regole_leghe").all();
@@ -735,7 +737,7 @@ async function handleScheduledSimulation(env) {
   }
 }
 
-// --- CORE INTERFACE: CODICE HTML DASHBOARD (OLED STYLE) ---
+// --- INTERFACCIA: DASHBOARD HTML CON TAILWIND & INT. A 2 LIVELLI ---
 
 const HTML_DASHBOARD = `
 <!DOCTYPE html>
@@ -743,258 +745,85 @@ const HTML_DASHBOARD = `
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>GOLDBET Predictive Suite</title>
+  <title>GOLDBET GUARDIAN</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,800;1,800&family=Share+Tech+Mono&display=swap');
+    body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 0; background: #000; color: #d4d4d8; }
+    .text-cyan-neon { color: #22d3ee; }
+    .bg-zinc-dark { background: #09090b; }
+    .border-zinc-dark { border: 1px solid #27272a; }
 
-    :root {
-      --bg: #000000;
-      --surface: #09090b;
-      --cyan: #00E5FF;
-      --gold: #ffd700;
-      --orange: #ff8c00;
-      --green: #10b981;
-      --red: #ef4444;
-      --purple: #bc13fe;
-      --text: #ffffff;
-      --text-dim: #71717a;
-      --border: #27272a;
+    /* Forzatura Scrollbar Invisibili ma Funzionanti */
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    /* Sticky per la colonna sinistra (Squadra) */
+    .sticky-col {
+      position: sticky;
+      left: 0;
+      background: #000000;
+      z-index: 10;
+      border-right: 1px solid #27272a;
     }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background-color: var(--bg);
-      color: var(--text);
-      font-family: 'Share Tech Mono', monospace;
-      padding: 0;
-      overflow-x: hidden;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    /* HEADER D'ELITE */
-    .header-container { 
-      background: var(--bg); 
-      padding: 12px 16px; 
-      display: flex; 
-      align-items: center; 
-      justify-content: space-between;
-      border-bottom: 1px solid var(--border); 
-    }
-
-    .logo { 
-      font-family: 'Montserrat', sans-serif; 
-      font-weight: 800; 
-      font-size: 16px; 
-      letter-spacing: -1px; 
-      display: flex; 
-      align-items: center; 
-      gap: 6px; 
-    }
-
-    .gold { color: white; font-style: italic; }
-    .dl { color: var(--cyan); font-style: normal; }
-
-    .status-dot { 
-      width: 8px; height: 8px; 
-      background: var(--cyan); 
-      border-radius: 50%; 
-      box-shadow: 0 0 8px var(--cyan); 
-      animation: pulse 2s infinite; 
-    }
-
-    @keyframes pulse { 
-      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 229, 255, 0.7); } 
-      70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(0, 229, 255, 0); } 
-      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 229, 255, 0); } 
-    }
-
-    /* BARRA DI NAVIGAZIONE E LEAGUE SELECTOR */
-    .top-bar { 
-      background: var(--surface); 
-      padding: 6px; 
-      display: flex; 
-      gap: 4px; 
-      overflow-x: auto; 
-      position: sticky; 
-      top: 0; 
-      z-index: 90; 
-      border-bottom: 1px solid var(--border); 
-      scrollbar-width: none;
-    }
-    .top-bar::-webkit-scrollbar { display: none; }
-
-    .btn-tab { 
-      background: #18181b; 
-      color: var(--text-dim); 
-      border: none; 
-      padding: 6px 12px; 
-      border-radius: 12px; 
-      font-size: 0.65rem; 
-      font-weight: 800; 
-      white-space: nowrap; 
-      cursor: pointer;
-    }
-
-    .btn-tab.active { 
-      background: var(--cyan); 
-      color: #000; 
-    }
-
-    /* CONTROL PANEL (SELECT & NITRO) */
-    .control-panel {
-      padding: 8px 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    select {
-      background: #18181b;
-      color: var(--text);
-      border: 1px solid var(--border);
-      padding: 6px 10px;
-      border-radius: 6px;
-      font-size: 0.75rem;
-      font-family: inherit;
-      flex-grow: 1;
-      max-width: 200px;
-    }
-
-    .btn-nitro {
-      background: var(--orange);
-      color: #000;
-      border: none;
-      padding: 6px 14px;
-      border-radius: 6px;
-      font-size: 0.7rem;
-      font-weight: 800;
-      cursor: pointer;
-      font-family: 'Montserrat', sans-serif;
-    }
-
-    /* CONTENITORE TABELLE */
-    .table-container { 
-      width: 100%; 
-      overflow-x: auto; 
-    }
-
-    table { 
-      width: 100%; 
-      border-collapse: collapse; 
-      font-size: 0.7rem; 
-      table-layout: fixed; 
-    }
-
-    thead tr {
-      background: #18181b;
-      border-bottom: 2px solid var(--border);
-    }
-
-    th, td { 
-      padding: 4px 6px; 
-      text-align: center; 
-      border-bottom: 1px solid var(--border); 
-      height: 34px; 
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    th {
-      color: var(--text-dim);
-      font-weight: 800;
-    }
-
-    /* Colonna Sticky (Squadra / Lega) */
-    th:first-child, td:first-child { 
-      position: sticky; 
-      left: 0; 
-      background: var(--surface); 
-      z-index: 80; 
-      border-right: 1px solid var(--border); 
-      width: 110px !important; 
-      text-align: left;
-      font-weight: bold;
-    }
-
-    /* COLORI LIVELLI NEON */
-    .neon-cyan { color: var(--cyan); }
-    .neon-gold { color: var(--gold); }
-    .neon-orange { color: var(--orange); }
-    .neon-green { color: var(--green); }
-    .neon-red { color: var(--red); }
-    .neon-purple { color: var(--purple); }
-    .neutral-dim { color: var(--text-dim); }
-
-    /* LOADING & TOAST */
-    .loading-container {
-      padding: 40px;
-      text-align: center;
-      color: var(--text-dim);
-      font-size: 0.8rem;
-    }
-
-    .toast {
-      position: fixed;
-      bottom: 16px;
-      left: 16px;
-      right: 16px;
-      background: #18181b;
-      border: 1px solid var(--cyan);
-      color: var(--text);
-      padding: 10px;
-      font-size: 0.75rem;
-      border-radius: 6px;
-      text-align: center;
-      display: none;
-      z-index: 1000;
+    
+    th.sticky-col {
+      background: #09090b;
     }
   </style>
 </head>
-<body>
+<body class="bg-black text-zinc-300">
 
-  <!-- HEADER D'ELITE -->
-  <div class="header-container">
-    <div class="logo">
-      <div><span class="gold">GOLDBET</span> <span class="dl">PREDICTIVE</span></div>
-      <span class="status-dot"></span>
+  <!-- HEADER ELITE -->
+  <header class="flex justify-between items-center p-5 bg-black border-b border-zinc-800 sticky top-0 z-50">
+    <h1 class="text-2xl font-black italic tracking-tighter text-white flex items-center select-none">
+      GOLDBET <span class="text-cyan-400 not-italic ml-1">GUARDIAN</span>
+      <div class="h-2 w-2 rounded-full bg-cyan-500 animate-pulse ml-3"></div>
+    </h1>
+    <div class="flex gap-3">
+      <button class="text-white hover:text-cyan-400 transition-all text-xl" onclick="switchTab('chaos')">🛡️</button>
+      <button class="text-white hover:text-cyan-400 transition-all text-xl" onclick="switchTab('projections')">📊</button>
     </div>
-    <div id="league-info" style="font-size: 0.65rem; color: var(--text-dim);">CARICAMENTO...</div>
+  </header>
+
+  <!-- BARRA DI NAVIGAZIONE INTERNA (TABS COMPATTE) -->
+  <div class="flex gap-2 p-3 overflow-x-auto no-scrollbar bg-zinc-950 border-b border-zinc-900 sticky top-[73px] z-40">
+    <button class="btn-tab bg-zinc-900 text-zinc-400 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider" onclick="switchTab('chaos')">La Mappa del Caos</button>
+    <button class="btn-tab bg-zinc-900 text-zinc-400 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider" onclick="switchTab('projections')">Monte Carlo</button>
+    <button class="btn-tab bg-zinc-900 text-zinc-400 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider" onclick="switchTab('xpts')">Classifica di Merito</button>
+    <button class="btn-tab bg-zinc-900 text-zinc-400 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider" onclick="switchTab('form')">Forma Reale</button>
   </div>
 
-  <!-- BARRA DI NAVIGAZIONE (TABS) -->
-  <div class="top-bar">
-    <button class="btn-tab active" onclick="switchTab('chaos')">LA MAPPA DEL CAOS</button>
-    <button class="btn-tab" onclick="switchTab('projections')">MONTE CARLO</button>
-    <button class="btn-tab" onclick="switchTab('xpts')">CLASSIFICA DI MERITO</button>
-    <button class="btn-tab" onclick="switchTab('form')">FORMA REALE</button>
+  <!-- CONTROL PANEL (SELETTORE E TASTO NITRO) -->
+  <div class="p-3 flex items-center justify-between gap-3 border-b border-zinc-900 bg-black" id="control-bar" style="display: none;">
+    <select id="league-selector" class="bg-zinc-900 border border-zinc-800 text-white rounded p-1.5 text-xs font-bold outline-none flex-grow max-w-xs" onchange="onLeagueChanged()"></select>
+    <button id="nitro-btn" class="bg-amber-500 hover:bg-amber-400 text-black px-3 py-1.5 rounded text-[10px] font-black tracking-wider uppercase transition-all shrink-0" onclick="triggerNitro()">NITRO SIM (2K)</button>
   </div>
 
-  <!-- CONTROL PANEL -->
-  <div class="control-panel">
-    <select id="league-selector" onchange="onLeagueChanged()"></select>
-    <button id="nitro-btn" class="btn-nitro" onclick="triggerNitro()" style="display: none;">NITRO SIM (2K)</button>
+  <!-- INFORMAZIONI LEGA ATTIVA -->
+  <div class="px-4 py-2 bg-zinc-950 border-b border-zinc-900 flex justify-between items-center text-[10px] uppercase font-bold text-zinc-500 tracking-wider">
+    <span id="league-info">Caricamento...</span>
+    <span class="text-cyan-400" id="league-code">GLOBAL</span>
   </div>
 
-  <!-- TABELLA DATI -->
-  <div class="table-container">
-    <table id="main-table">
+  <!-- DASHBOARD PRINCIPALE (TABELLA A 2 LIVELLI) -->
+  <div class="m-3 overflow-x-auto rounded-lg border border-zinc-800 bg-black no-scrollbar">
+    <table class="w-full border-collapse text-center">
       <thead id="table-head"></thead>
-      <tbody id="table-body"></tbody>
+      <tbody id="table-body" class="text-xs"></tbody>
     </table>
   </div>
 
-  <div id="loading" class="loading-container">Dati in caricamento...</div>
-  <div id="toast" class="toast"></div>
+  <!-- ANIMAZIONE LOADING -->
+  <div id="loading" class="p-12 text-center text-xs font-bold tracking-widest text-zinc-500 uppercase">Dati in elaborazione...</div>
+
+  <!-- NOTIFICA FLOAT TOAST -->
+  <div id="toast" class="fixed bottom-4 left-4 right-4 bg-zinc-950 border border-cyan-500 text-cyan-400 p-3 rounded-lg text-xs font-bold text-center select-none shadow-xl shadow-cyan-500/10 transition-all duration-300 transform translate-y-20 opacity-0 z-[1000]"></div>
 
   <script>
     let activeTab = 'chaos';
     let currentLeague = 'ARG';
     let leagues = [];
 
-    // Inizializzazione della dashboard
     async function init() {
       try {
         const res = await fetch('/api/leagues');
@@ -1005,7 +834,7 @@ const HTML_DASHBOARD = `
         leagues.forEach(l => {
           const opt = document.createElement('option');
           opt.value = l.div;
-          opt.textContent = \`\${l.nazione} - \${l.descrizione}\`;
+          opt.textContent = \`\${l.nazione.toUpperCase()} - \${l.descrizione.toUpperCase()}\`;
           selector.appendChild(opt);
         });
 
@@ -1016,33 +845,38 @@ const HTML_DASHBOARD = `
 
         switchTab('chaos');
       } catch (err) {
-        showToast("Errore di caricamento: " + err.message);
+        showToast("Errore di inizializzazione: " + err.message);
       }
     }
 
     function showToast(msg) {
       const toast = document.getElementById('toast');
       toast.textContent = msg;
-      toast.style.display = 'block';
-      setTimeout(() => { toast.style.display = 'none'; }, 4000);
+      toast.className = toast.className.replace("translate-y-20 opacity-0", "translate-y-0 opacity-100");
+      setTimeout(() => {
+        toast.className = toast.className.replace("translate-y-0 opacity-100", "translate-y-20 opacity-0");
+      }, 4000);
     }
 
     function switchTab(tab) {
       activeTab = tab;
-      document.querySelectorAll('.btn-tab').forEach(b => b.classList.remove('active'));
       
-      const idx = ['chaos', 'projections', 'xpts', 'form'].indexOf(tab);
-      document.querySelectorAll('.btn-tab')[idx].classList.add('active');
+      const buttons = document.querySelectorAll('.btn-tab');
+      const tabNames = ['chaos', 'projections', 'xpts', 'form'];
+      
+      buttons.forEach((btn, idx) => {
+        if (tabNames[idx] === tab) {
+          btn.className = "btn-tab bg-cyan-400 text-black px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider";
+        } else {
+          btn.className = "btn-tab bg-zinc-900 text-zinc-400 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider";
+        }
+      });
 
-      const selectPanel = document.getElementById('league-selector');
-      const nitroBtn = document.getElementById('nitro-btn');
-
+      const controlBar = document.getElementById('control-bar');
       if (tab === 'chaos') {
-        selectPanel.style.display = 'none';
-        nitroBtn.style.display = 'none';
+        controlBar.style.display = 'none';
       } else {
-        selectPanel.style.display = 'block';
-        nitroBtn.style.display = 'block';
+        controlBar.style.display = 'flex';
       }
 
       loadData();
@@ -1056,20 +890,22 @@ const HTML_DASHBOARD = `
     async function triggerNitro() {
       const btn = document.getElementById('nitro-btn');
       btn.textContent = 'RUNNING...';
+      btn.className = btn.className.replace("bg-amber-500", "bg-zinc-800 text-zinc-500 cursor-not-allowed");
       btn.disabled = true;
-      showToast("Simulatore ad alte prestazioni avviato (2.000 iterazioni)...");
+      showToast("Motore simulativo ad alte prestazioni avviato (2K cicli)...");
 
       try {
         const res = await fetch(\`/api/projections?league=\${currentLeague}&nitro=true\`);
         const data = await res.json();
-        showToast("Simulazione completata e registrata nel database!");
+        showToast("Simulazione completata e registrata con successo!");
         if (activeTab === 'projections') {
           renderProjections(data.results);
         }
       } catch (err) {
-        showToast("Errore durante la simulazione: " + err.message);
+        showToast("Errore di esecuzione: " + err.message);
       } finally {
         btn.textContent = 'NITRO SIM (2K)';
+        btn.className = btn.className.replace("bg-zinc-800 text-zinc-500 cursor-not-allowed", "bg-amber-500 text-black");
         btn.disabled = false;
       }
     }
@@ -1084,8 +920,16 @@ const HTML_DASHBOARD = `
       thead.innerHTML = '';
 
       const leagueInfo = document.getElementById('league-info');
+      const leagueCode = document.getElementById('league-code');
       const matched = leagues.find(l => l.div === currentLeague);
-      leagueInfo.textContent = activeTab === 'chaos' ? 'MAPPA GLOBAL' : (matched ? matched.descrizione : currentLeague);
+
+      if (activeTab === 'chaos') {
+        leagueInfo.textContent = 'MAPPA GLOBALE DEL DISORDINE';
+        leagueCode.textContent = 'GLOBAL';
+      } else {
+        leagueInfo.textContent = matched ? matched.descrizione : currentLeague;
+        leagueCode.textContent = currentLeague;
+      }
 
       try {
         if (activeTab === 'chaos') {
@@ -1108,41 +952,45 @@ const HTML_DASHBOARD = `
         loading.style.display = 'none';
       } catch (err) {
         loading.style.display = 'none';
-        showToast("Errore di caricamento dei dati: " + err.message);
+        showToast("Errore nel recupero dati: " + err.message);
       }
     }
 
-    // --- RENDERING TABELLE ---
+    // --- LOGICHE DI RENDERING TABELLE A 2 LIVELLI (DIRETTIVA GOLDBET COERENTE) ---
 
     function renderChaosMap(data) {
       const thead = document.getElementById('table-head');
       const tbody = document.getElementById('table-body');
 
       thead.innerHTML = \`
-        <tr>
-          <th style="width: 80px;">LEGA</th>
-          <th>NAZIONE</th>
-          <th>DESCRIZIONE</th>
-          <th style="width: 80px;">CAOS %</th>
+        <tr class="bg-zinc-900 text-cyan-400 text-[10px] font-black border-b border-zinc-700">
+          <th colspan="3" class="p-2 border-r border-zinc-800 text-left sticky-col">INFORMAZIONI GENERALI</th>
+          <th colspan="1" class="p-2">METRICHE</th>
+        </tr>
+        <tr class="bg-zinc-950 text-zinc-500 text-[9px] uppercase tracking-widest border-b border-zinc-800">
+          <th class="p-2 text-left sticky-col">LEGA</th>
+          <th class="p-2 text-left">NAZIONE</th>
+          <th class="p-2 text-left border-r border-zinc-800">DESCRIZIONE</th>
+          <th class="p-2">CAOS INDEX</th>
         </tr>
       \`;
 
       if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="neutral-dim">Nessun dato sufficiente (min. 15 partite).</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-zinc-500">Nessun dato sufficiente rilevato.</td></tr>';
         return;
       }
 
       data.forEach(item => {
-        let colorClass = 'neon-green';
-        if (item.chaos_index > 70) colorClass = 'neon-red';
-        else if (item.chaos_index > 55) colorClass = 'neon-orange';
+        let chaosColor = 'text-green-500';
+        if (item.chaos_index > 70) chaosColor = 'text-red-500';
+        else if (item.chaos_index > 55) chaosColor = 'text-amber-500';
 
         tbody.innerHTML += \`
-          <tr>
-            <td>\${item.league}</td>
-            <td style="text-align: left;">\${item.nazione}</td>
-            <td style="text-align: left;">\${item.descrizione}</td>
-            <td class="\${colorClass} font-mono">\${item.chaos_index}%</td>
+          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40">
+            <td class="p-2 text-left font-black text-white text-[10.5px] uppercase sticky-col">\${item.league}</td>
+            <td class="p-2 text-left text-zinc-400 font-bold">\${item.nazione.toUpperCase()}</td>
+            <td class="p-2 text-left text-zinc-400 border-r border-zinc-900 text-ellipsis overflow-hidden whitespace-nowrap">\${item.descrizione.toUpperCase()}</td>
+            <td class="p-2 font-bold \${chaosColor}">\${item.chaos_index}%</td>
           </tr>
         \`;
       });
@@ -1153,38 +1001,43 @@ const HTML_DASHBOARD = `
       const tbody = document.getElementById('table-body');
 
       thead.innerHTML = \`
-        <tr>
-          <th style="width: 110px;">TEAM</th>
-          <th>xPTS</th>
-          <th>SCUD</th>
-          <th>UCL</th>
-          <th>UEL</th>
-          <th>UECL</th>
-          <th>PROM</th>
-          <th>PLAYO</th>
-          <th>PLAYU</th>
-          <th>RETR</th>
+        <tr class="bg-zinc-900 text-cyan-400 text-[10px] font-black border-b border-zinc-700">
+          <th colspan="2" class="p-2 border-r border-zinc-800 text-left sticky-col">PROIEZIONE STANDARD</th>
+          <th colspan="4" class="p-2 border-r border-zinc-800">PIAZZAMENTI COPA</th>
+          <th colspan="4" class="p-2">COMPETIZIONI DI LEGA</th>
+        </tr>
+        <tr class="bg-zinc-950 text-zinc-500 text-[9px] uppercase tracking-widest border-b border-zinc-800">
+          <th class="p-2 text-left sticky-col">SQUADRA</th>
+          <th class="p-2 border-r border-zinc-800">xPTS PROG</th>
+          <th class="p-2">SCUDETTO</th>
+          <th class="p-2">CHAMPIONS</th>
+          <th class="p-2">EUROPA L.</th>
+          <th class="p-2 border-r border-zinc-800">CONFERENCE</th>
+          <th class="p-2">PROMOZIONE</th>
+          <th class="p-2">PLAYOFF</th>
+          <th class="p-2">PLAYOUT</th>
+          <th class="p-2">RETROCES.</th>
         </tr>
       \`;
 
       if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="neutral-dim">Nessuna proiezione salvata. Premi NITRO SIM per generare.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="p-4 text-center text-zinc-500">Dati assenti. Usa NITRO SIM per avviare.</td></tr>';
         return;
       }
 
       data.forEach(item => {
         tbody.innerHTML += \`
-          <tr>
-            <td>\${item.squadra}</td>
-            <td class="neon-cyan font-mono">\${item.xpts_mediana.toFixed(1)}</td>
-            <td class="\${item.scudetto_prob > 50 ? 'neon-gold' : 'neutral-dim'} font-mono">\${item.scudetto_prob.toFixed(1)}%</td>
-            <td class="\${item.ucl_prob > 50 ? 'neon-cyan' : 'neutral-dim'} font-mono">\${item.ucl_prob.toFixed(1)}%</td>
-            <td class="\${item.uel_prob > 50 ? 'neon-orange' : 'neutral-dim'} font-mono">\${item.uel_prob.toFixed(1)}%</td>
-            <td class="\${item.uecl_prob > 50 ? 'neon-green' : 'neutral-dim'} font-mono">\${item.uecl_prob.toFixed(1)}%</td>
-            <td class="\${item.promo_prob > 50 ? 'neon-green' : 'neutral-dim'} font-mono">\${item.promo_prob.toFixed(1)}%</td>
-            <td class="\${item.playoff_prob > 50 ? 'neon-purple' : 'neutral-dim'} font-mono">\${item.playoff_prob.toFixed(1)}%</td>
-            <td class="\${item.playout_prob > 50 ? 'neon-purple' : 'neutral-dim'} font-mono">\${item.playout_prob.toFixed(1)}%</td>
-            <td class="\${item.retro_prob > 50 ? 'neon-red' : 'neutral-dim'} font-mono">\${item.retro_prob.toFixed(1)}%</td>
+          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40">
+            <td class="p-2 text-left font-black text-white text-[10.5px] uppercase sticky-col">\${item.squadra}</td>
+            <td class="p-2 font-black text-cyan-400 border-r border-zinc-900">\${item.xpts_mediana.toFixed(1)}</td>
+            <td class="p-2 font-bold \${item.scudetto_prob > 50 ? 'text-amber-400' : 'text-zinc-600'}">\${item.scudetto_prob.toFixed(1)}%</td>
+            <td class="p-2 font-bold \${item.ucl_prob > 50 ? 'text-cyan-400' : 'text-zinc-600'}">\${item.ucl_prob.toFixed(1)}%</td>
+            <td class="p-2 font-bold \${item.uel_prob > 50 ? 'text-orange-400' : 'text-zinc-600'}">\${item.uel_prob.toFixed(1)}%</td>
+            <td class="p-2 font-bold border-r border-zinc-900 \${item.uecl_prob > 50 ? 'text-emerald-400' : 'text-zinc-600'}">\${item.uecl_prob.toFixed(1)}%</td>
+            <td class="p-2 font-bold \${item.promo_prob > 50 ? 'text-emerald-400' : 'text-zinc-600'}">\${item.promo_prob.toFixed(1)}%</td>
+            <td class="p-2 font-bold \${item.playoff_prob > 50 ? 'text-purple-400' : 'text-zinc-600'}">\${item.playoff_prob.toFixed(1)}%</td>
+            <td class="p-2 font-bold \${item.playout_prob > 50 ? 'text-purple-400' : 'text-zinc-600'}">\${item.playout_prob.toFixed(1)}%</td>
+            <td class="p-2 font-bold \${item.retro_prob > 50 ? 'text-red-500' : 'text-zinc-600'}">\${item.retro_prob.toFixed(1)}%</td>
           </tr>
         \`;
       });
@@ -1195,32 +1048,36 @@ const HTML_DASHBOARD = `
       const tbody = document.getElementById('table-body');
 
       thead.innerHTML = \`
-        <tr>
-          <th style="width: 110px;">TEAM</th>
-          <th>PG</th>
-          <th>PUNTI REALI</th>
-          <th>xPTS</th>
-          <th>DIFF</th>
+        <tr class="bg-zinc-900 text-cyan-400 text-[10px] font-black border-b border-zinc-700">
+          <th colspan="3" class="p-2 border-r border-zinc-800 text-left sticky-col">CLASSIFICA REALE</th>
+          <th colspan="2" class="p-2">METRICA MERITO</th>
+        </tr>
+        <tr class="bg-zinc-950 text-zinc-500 text-[9px] uppercase tracking-widest border-b border-zinc-800">
+          <th class="p-2 text-left sticky-col">SQUADRA</th>
+          <th class="p-2">PG</th>
+          <th class="p-2 border-r border-zinc-800">PUNTI REALI</th>
+          <th class="p-2">EXPECTED POINTS</th>
+          <th class="p-2">SCOSTAMENTO (DIFF)</th>
         </tr>
       \`;
 
       if (data.length === 0 || data.error) {
-        tbody.innerHTML = \`<tr><td colspan="5" class="neutral-dim">\${data.error || 'Nessun dato.'}</td></tr>\`;
+        tbody.innerHTML = \`<tr><td colspan="5" class="p-4 text-center text-zinc-500">\${data.error || 'Dati non disponibili.'}</td></tr>\`;
         return;
       }
 
       data.forEach(item => {
         const isOverperforming = item.diff > 0;
-        const diffClass = isOverperforming ? 'neon-red' : (item.diff < 0 ? 'neon-green' : 'neutral-dim');
+        const diffClass = isOverperforming ? 'text-red-500' : (item.diff < 0 ? 'text-green-500' : 'text-zinc-500');
         const sign = isOverperforming ? '+' : '';
 
         tbody.innerHTML += \`
-          <tr>
-            <td>\${item.team}</td>
-            <td class="font-mono">\${item.played}</td>
-            <td class="font-mono">\${item.actualPoints}</td>
-            <td class="neon-cyan font-mono">\${item.expectedPoints.toFixed(2)}</td>
-            <td class="\${diffClass} font-mono">\${sign}\${item.diff}</td>
+          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40">
+            <td class="p-2 text-left font-black text-white text-[10.5px] uppercase sticky-col">\${item.team}</td>
+            <td class="p-2 text-zinc-400 font-bold">\${item.played}</td>
+            <td class="p-2 text-zinc-400 font-bold border-r border-zinc-900">\${item.actualPoints}</td>
+            <td class="p-2 font-bold text-cyan-400">\${item.expectedPoints.toFixed(2)}</td>
+            <td class="p-2 font-black \${diffClass}">\${sign}\${item.diff}</td>
           </tr>
         \`;
       });
@@ -1231,37 +1088,42 @@ const HTML_DASHBOARD = `
       const tbody = document.getElementById('table-body');
 
       thead.innerHTML = \`
-        <tr>
-          <th style="width: 110px;">TEAM</th>
-          <th>PG</th>
-          <th>GOL FATTI</th>
-          <th>EXP FATTI</th>
-          <th>SHOCK ATT</th>
-          <th>GOL SUBITI</th>
-          <th>EXP SUB</th>
-          <th>SHOCK DIF</th>
+        <tr class="bg-zinc-900 text-cyan-400 text-[10px] font-black border-b border-zinc-700">
+          <th colspan="2" class="p-2 border-r border-zinc-800 text-left sticky-col">DATI GENERALI</th>
+          <th colspan="3" class="p-2 border-r border-zinc-800">REPARTO ATTACCO (xG)</th>
+          <th colspan="3" class="p-2">REPARTO DIFESA (xGA)</th>
+        </tr>
+        <tr class="bg-zinc-950 text-zinc-500 text-[9px] uppercase tracking-widest border-b border-zinc-800">
+          <th class="p-2 text-left sticky-col">SQUADRA</th>
+          <th class="p-2 border-r border-zinc-800">PG</th>
+          <th class="p-2">REALI</th>
+          <th class="p-2">ATTESI</th>
+          <th class="p-2 border-r border-zinc-800">RATING FORM</th>
+          <th class="p-2">REALI</th>
+          <th class="p-2">ATTESI</th>
+          <th class="p-2">RATING FORM</th>
         </tr>
       \`;
 
       if (data.length === 0 || data.error) {
-        tbody.innerHTML = \`<tr><td colspan="8" class="neutral-dim">\${data.error || 'Nessun dato.'}</td></tr>\`;
+        tbody.innerHTML = \`<tr><td colspan="8" class="p-4 text-center text-zinc-500">\${data.error || 'Dati non calcolabili.'}</td></tr>\`;
         return;
       }
 
       data.forEach(item => {
-        const attClass = item.ratingFormaAttacco > 0 ? 'neon-green' : (item.ratingFormaAttacco < 0 ? 'neon-red' : 'neutral-dim');
-        const difClass = item.ratingFormaDifesa > 0 ? 'neon-green' : (item.ratingFormaDifesa < 0 ? 'neon-red' : 'neutral-dim');
+        const attClass = item.ratingFormaAttacco > 0 ? 'text-green-500' : (item.ratingFormaAttacco < 0 ? 'text-red-500' : 'text-zinc-500');
+        const difClass = item.ratingFormaDifesa > 0 ? 'text-green-500' : (item.ratingFormaDifesa < 0 ? 'text-red-500' : 'text-zinc-500');
 
         tbody.innerHTML += \`
-          <tr>
-            <td>\${item.team}</td>
-            <td class="font-mono">\${item.partiteG}</td>
-            <td class="font-mono">\${item.actualGoalsScored}</td>
-            <td class="neutral-dim font-mono">\${item.expectedGoalsScored}</td>
-            <td class="\${attClass} font-mono">\${item.ratingFormaAttacco > 0 ? '+' : ''}\${item.ratingFormaAttacco}</td>
-            <td class="font-mono">\${item.actualGoalsConceded}</td>
-            <td class="neutral-dim font-mono">\${item.expectedGoalsConceded}</td>
-            <td class="\${difClass} font-mono">\${item.ratingFormaDifesa > 0 ? '+' : ''}\${item.ratingFormaDifesa}</td>
+          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40">
+            <td class="p-2 text-left font-black text-white text-[10.5px] uppercase sticky-col">\${item.team}</td>
+            <td class="p-2 text-zinc-400 border-r border-zinc-900 font-bold">\${item.partiteG}</td>
+            <td class="p-2 text-zinc-300">\text-zinc-300\${item.actualGoalsScored}</td>
+            <td class="p-2 text-zinc-500 font-bold">\${item.expectedGoalsScored}</td>
+            <td class="p-2 font-black border-r border-zinc-900 \${attClass}">\${item.ratingFormaAttacco > 0 ? '+' : ''}\${item.ratingFormaAttacco}</td>
+            <td class="p-2 text-zinc-300">\${item.actualGoalsConceded}</td>
+            <td class="p-2 text-zinc-500 font-bold">\${item.expectedGoalsConceded}</td>
+            <td class="p-2 font-black \${difClass}">\${item.ratingFormaDifesa > 0 ? '+' : ''}\${item.ratingFormaDifesa}</td>
           </tr>
         \`;
       });
