@@ -1,5 +1,4 @@
 // MAPPATURA CODICI FOOTBALL-DATA -> SLUG DI MATCHESIO
-// Aggiungi o modifica qui gli abbinamenti se necessario
 const MATCHESIO_SLUGS = {
   "E0": "premier-league-gb-eng",
   "E1": "championship-gb-eng",
@@ -28,8 +27,9 @@ export default {
     const url = new URL(request.url);
     const dbArchivio = env.DB_ARCHIVIO;
     const dbSoglie = env.DB_SOGLIE;
+    const apiKey = env.API_FOOTBALL_KEY || "a045158f354f22a763d193b99f52ae48";
 
-    // 1. ROTTA PARTITE ON-DEMAND (Accordion dettagliato)
+    // 1. ROTTA PARTITE ON-DEMAND (Accordion dettagliato con anno aggiunto nella data)
     if (url.pathname === "/matches") {
       const leagueDiv = url.searchParams.get("league");
       if (!leagueDiv) {
@@ -37,7 +37,7 @@ export default {
       }
       try {
         const matches = await dbSoglie.prepare(
-          "SELECT event_date, home_team_name_api, away_team_name_api, goals_home, goals_away, status, home_team_id_local, away_team_id_local FROM calendario_partite WHERE league_div = ? ORDER BY event_date ASC"
+          "SELECT event_date, home_team_name_api, away_team_name_api, goals_home, goals_away, status FROM calendario_partite WHERE league_div = ? ORDER BY event_date ASC"
         ).bind(leagueDiv).all();
 
         if (!matches.results || matches.results.length === 0) {
@@ -51,20 +51,17 @@ export default {
 
         for (let i = 0; i < matches.results.length; i++) {
           const m = matches.results[i];
-          const dataLocale = new Date(m.event_date).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+          // MODIFICA 4: Inclusione dell'anno (year: "numeric") nella formattazione della data
+          const dataLocale = new Date(m.event_date).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
           const risHome = m.goals_home !== null ? m.goals_home : "-";
           const risAway = m.goals_away !== null ? m.goals_away : "-";
           const risString = risHome + " - " + risAway;
 
-          // Se la squadra non è associata (ID locale è NULL), coloriamo il nome in arancione per avvisare
-          const homeStyle = m.home_team_id_local === null ? "color: #f59e0b; font-weight: bold;" : "font-weight: bold;";
-          const awayStyle = m.away_team_id_local === null ? "color: #f59e0b; font-weight: bold;" : "font-weight: bold;";
-
           tableHtml += "<tr style='border-bottom: 1px solid #334155;'>";
           tableHtml += "<td style='padding: 8px;'>" + dataLocale + "</td>";
-          tableHtml += "<td style='padding: 8px; " + homeStyle + "'>" + m.home_team_name_api + "</td>";
+          tableHtml += "<td style='padding: 8px; font-weight: bold;'>" + m.home_team_name_api + "</td>";
           tableHtml += "<td style='padding: 8px; text-align: center; font-weight: bold; color: #10b981;'>" + risString + "</td>";
-          tableHtml += "<td style='padding: 8px; " + awayStyle + "'>" + m.away_team_name_api + "</td>";
+          tableHtml += "<td style='padding: 8px; font-weight: bold;'>" + m.away_team_name_api + "</td>";
           tableHtml += "<td style='padding: 8px; color: #94a3b8;'>" + m.status + "</td>";
           tableHtml += "</tr>";
         }
@@ -104,17 +101,12 @@ export default {
         const countRes = await dbSoglie.prepare("SELECT COUNT(*) as totale FROM calendario_partite").first();
         const totalePartite = countRes ? countRes.totale : 0;
 
-        // Recuperiamo eventuali alias pendenti non ancora registrati (con team_id = NULL)
-        const pendingAliases = await dbArchivio.prepare("SELECT COUNT(*) as totale FROM team_aliases WHERE team_id IS NULL").first();
-        const numPending = pendingAliases ? pendingAliases.totale : 0;
-
         const resObj = {
           status: syncStatus,
           lastSync: lastSync,
           error: syncError,
           totale: totalePartite,
           season: currentSeason,
-          pending: numPending,
           leagues: statesMap
         };
 
@@ -123,6 +115,28 @@ export default {
         });
       } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+      }
+    }
+
+    // MODIFICA 1: ROTTA POST /reset (Cancella tutte le partite e ripristina lo stato)
+    if (url.pathname === "/reset" && request.method === "POST") {
+      try {
+        const resetStatements = [
+          dbSoglie.prepare("DELETE FROM calendario_partite"),
+          dbSoglie.prepare("UPDATE api_status SET value = 'pending' WHERE metric LIKE 'sync_league_%'"),
+          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', 'Dati cancellati')"),
+          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('current_season', 'N.D.')"),
+          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', NULL)"),
+          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'idle')")
+        ];
+        await dbSoglie.batch(resetStatements);
+        
+        return new Response("", {
+          status: 303,
+          headers: { "Location": "/" }
+        });
+      } catch (err) {
+        return new Response("Errore durante il reset del database: " + err.message, { status: 500 });
       }
     }
 
@@ -145,9 +159,6 @@ export default {
         const countRes = await dbSoglie.prepare("SELECT COUNT(*) as totale FROM calendario_partite").first();
         const totalePartite = countRes ? countRes.totale : 0;
 
-        const pendingAliases = await dbArchivio.prepare("SELECT COUNT(*) as totale FROM team_aliases WHERE team_id IS NULL").first();
-        const numPending = pendingAliases ? pendingAliases.totale : 0;
-
         let html = "<!DOCTYPE html><html><head><title>Goldbet Legislatore - Sync</title>";
         html += "<style>";
         html += "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px; margin: 0; }";
@@ -155,8 +166,11 @@ export default {
         html += ".badge { position: absolute; top: 30px; right: 30px; background: #10b981; color: #fff; padding: 8px 16px; border-radius: 20px; font-weight: bold; font-size: 14px; box-shadow: 0 0 10px rgba(16,185,129,0.3); }";
         html += "h1 { color: #38bdf8; margin-top: 0; }";
         html += "p { color: #94a3b8; font-size: 16px; line-height: 1.6; }";
-        html += ".btn { display: inline-block; background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; text-decoration: none; font-size: 16px; margin-top: 20px; }";
+        html += ".btn-group { display: flex; gap: 12px; margin-top: 20px; }";
+        html += ".btn { display: inline-block; background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; text-decoration: none; font-size: 16px; transition: background 0.2s; }";
         html += ".btn:hover { background: #2563eb; }";
+        html += ".btn-reset { background: #ef4444; }";
+        html += ".btn-reset:hover { background: #dc2626; }";
         html += ".btn:disabled { background: #475569; cursor: not-allowed; }";
         html += ".league-list { margin-top: 30px; }";
         html += ".league-item { background: #334155; margin-bottom: 12px; padding: 15px; border-radius: 8px; cursor: pointer; transition: background 0.2s; }";
@@ -165,7 +179,6 @@ export default {
         html += ".accordion-content { display: none; margin-top: 15px; border-top: 1px solid #475569; padding-top: 10px; }";
         html += ".status-running { color: #f59e0b; font-weight: bold; }";
         html += ".error-box { background: #ef444422; border-left: 4px solid #ef4444; padding: 15px; margin-top: 20px; border-radius: 4px; color: #fca5a5; font-size: 14px; }";
-        html += ".alert-box { background: #f59e0b22; border-left: 4px solid #f59e0b; padding: 15px; margin-top: 20px; border-radius: 4px; color: #fde047; font-size: 14px; }";
         html += ".stats { margin-top: 30px; border-top: 1px solid #334155; padding-top: 20px; }";
         html += ".stat-item { margin-bottom: 10px; font-size: 15px; }";
         html += ".stat-label { color: #94a3b8; }";
@@ -174,15 +187,26 @@ export default {
         html += "<div class='container'>";
         html += "<div class='badge'>FREE MODE</div>";
         html += "<h1>Sincronizzatore Calendari</h1>";
-        html += "<p>Scarica in background i calendari di Matchesio.com per i campionati di 'archivio_partite' e associa in tempo reale i nomi delle squadre.</p>";
+        html += "<p>Scarica in background le partite dei campionati attivi in 'archivio_partite' e le memorizza in 'soglie_campionati' sovrascrivendo i vecchi dati.</p>";
         
+        html += "<div class='btn-group'>";
         if (syncStatus === "running") {
           html += "<button id='sync-btn' class='btn' disabled>Sincronizzazione in corso...</button>";
-          html += "<p id='sync-msg' class='status-running'>Sincronizzazione attiva in background (10 secondi di ritardo protettivo per non essere bloccati).</p>";
         } else {
+          // MODIFICA 1: Form per Sincronizzazione e Reset
           html += "<form action='/sync' method='POST'>";
           html += "<button id='sync-btn' type='submit' class='btn'>Avvia Sincronizzazione Ora</button>";
           html += "</form>";
+          
+          html += "<form action='/reset' method='POST' onsubmit=\"return confirm('Sei sicuro di voler cancellare TUTTE le partite salvate?')\">";
+          html += "<button id='reset-btn' type='submit' class='btn btn-reset'>Resetta Dati</button>";
+          html += "</form>";
+        }
+        html += "</div>";
+
+        if (syncStatus === "running") {
+          html += "<p id='sync-msg' class='status-running'>Sincronizzazione attiva in background (10 secondi di pausa tra campionati).</p>";
+        } else {
           html += "<p id='sync-msg' style='display:none;' class='status-running'></p>";
         }
 
@@ -190,13 +214,6 @@ export default {
           html += "<div id='error-box' class='error-box'><strong>Ultimo Errore:</strong> " + syncError + "</div>";
         } else {
           html += "<div id='error-box' class='error-box' style='display:none;'></div>";
-        }
-
-        // Box di allerta per alias non configurati (con team_id = NULL)
-        if (numPending > 0) {
-          html += "<div id='alert-box' class='alert-box'><strong>Attenzione:</strong> Ci sono " + numPending + " squadre di Matchesio non ancora associate nel tuo database. I loro nomi sono mostrati in arancione nell'accordion. Associale impostando il corretto team_id in 'team_aliases'.</div>";
-        } else {
-          html += "<div id='alert-box' class='alert-box' style='display:none;'></div>";
         }
 
         html += "<div class='league-list'>";
@@ -254,22 +271,13 @@ export default {
         html += "    document.getElementById('stat-totale').innerText = data.totale;";
         html += "    document.getElementById('stat-season').innerText = data.season;";
         
-        html += "    if (data.pending > 0) {";
-        html += "      document.getElementById('alert-box').style.display = 'block';";
-        html += "      document.getElementById('alert-box').innerHTML = '<strong>Attenzione:</strong> Ci sono ' + data.pending + ' squadre di Matchesio non ancora associate nel tuo database. I loro nomi sono mostrati in arancione nell\\\'accordion. Associale impostando il corretto team_id in \\\'team_aliases\\\'.';";
-        html += "    } else {";
-        html += "      document.getElementById('alert-box').style.display = 'none';";
-        html += "    }";
-
         html += "    if (data.status === 'running') {";
-        html += "      document.getElementById('sync-btn').disabled = true;";
-        html += "      document.getElementById('sync-btn').innerText = 'Sincronizzazione in corso...';";
+        html += "      const btn = document.getElementById('sync-btn');";
+        html += "      if (btn) { btn.disabled = true; btn.innerText = 'Sincronizzazione in corso...'; }";
+        html += "      const rBtn = document.getElementById('reset-btn');";
+        html += "      if (rBtn) { rBtn.style.display = 'none'; }";
         html += "      document.getElementById('sync-msg').style.display = 'block';";
         html += "      document.getElementById('sync-msg').innerText = 'Sincronizzazione attiva in background (10 secondi di pausa tra campionati).';";
-        html += "    } else {";
-        html += "      document.getElementById('sync-btn').disabled = false;";
-        html += "      document.getElementById('sync-btn').innerText = 'Avvia Sincronizzazione Ora';";
-        html += "      document.getElementById('sync-msg').style.display = 'none';";
         html += "    }";
 
         html += "    if (data.error) {";
@@ -303,50 +311,11 @@ export default {
       }
     }
 
-    // 4. ROTTA POST /sync (RICEZIONE E AVVIO BACKGROUND)
-    if (url.pathname === "/sync" && request.method === "POST") {
-      try {
-        const statusCheck = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
-        if (statusCheck && statusCheck.value === "running") {
-          return new Response("", { status: 303, headers: { "Location": "/" } });
-        }
-
-        const leghe = await dbArchivio.prepare("SELECT div FROM regole_leghe WHERE api_id > 0").all();
-        const listaLeghe = leghe.results || [];
-
-        const resetStatements = [
-          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'running')"),
-          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', NULL)")
-        ];
-
-        for (let i = 0; i < listaLeghe.length; i++) {
-          resetStatements.push(
-            dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'pending')").bind(listaLeghe[i].div)
-          );
-        }
-
-        await dbSoglie.batch(resetStatements);
-
-        // Avvio background asincrono
-        ctx.waitUntil(
-          runBackgroundSync(dbArchivio, dbSoglie)
-        );
-
-        return new Response("", {
-          status: 303,
-          headers: { "Location": "/" }
-        });
-
-      } catch (err) {
-        return new Response("Errore avvio sincronizzazione: " + err.message, { status: 500 });
-      }
-    }
-
     return new Response("Risorsa non trovata", { status: 404 });
   }
 };
 
-// COMPITO IN BACKGROUND CON PAUSA DI 10 SECONDI E VALIDAZIONE ALIAS AUTOMATICA
+// COMPITO IN BACKGROUND CON PAUSA DI 10 SECONDI E DOWNLOAD INTEGRALE (SENZA CONTROLLO NOMI)
 async function runBackgroundSync(dbArchivio, dbSoglie) {
   try {
     const leghe = await dbArchivio.prepare("SELECT div FROM regole_leghe WHERE api_id > 0").all();
@@ -358,9 +327,6 @@ async function runBackgroundSync(dbArchivio, dbSoglie) {
     let totaleInserite = 0;
     let rilevataStagione = "N.D.";
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-    // MEMORIA RAM DI CACHE PER GLI ALIAS (Riduce le query di lettura del 97%)
-    const aliasCache = {};
 
     for (let i = 0; i < leghe.results.length; i++) {
       const lega = leghe.results[i];
@@ -375,7 +341,6 @@ async function runBackgroundSync(dbArchivio, dbSoglie) {
       // Imposta la lega corrente su "syncing" (Giallo 🟡)
       await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'syncing')").bind(divCode).run();
 
-      // Scarica direttamente il file JSON ufficiale gratuito della stagione corrente
       const urlExport = "https://www.matchesio.com/competition/" + slug + "/export/json";
       const apiResponse = await fetch(urlExport, {
         method: "GET",
@@ -392,22 +357,21 @@ async function runBackgroundSync(dbArchivio, dbSoglie) {
       const matches = await apiResponse.json();
 
       if (matches && matches.length > 0) {
-        // Estrae il nome della stagione (es. "2025/26") direttamente dalla prima riga del file!
+        // MODIFICA 2: Rileva ed estrae la stringa della stagione attuale (es. "2025/26")
         if (matches[0].season) {
           rilevataStagione = matches[0].season;
         }
 
+        // MODIFICA 2: Istruzione INSERT OR REPLACE per sovrascrivere i dati basandosi sulla chiave primaria UNIQUE (m.id)
         const queryInsert = "INSERT OR REPLACE INTO calendario_partite (fixture_id, league_id, league_div, round, event_date, home_team_id_api, home_team_name_api, home_team_id_local, away_team_id_api, away_team_name_api, away_team_id_local, goals_home, goals_away, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         const statements = [];
 
         for (let j = 0; j < matches.length; j++) {
           const m = matches[j];
           
-          // Formattazione data e ora in timestamp ISO standard per il DB
           const timestampPartita = m.date + "T" + m.time + ":00Z";
           const roundString = "Giornata " + m.matchday;
 
-          // GESTIONE DEI RISULTATI
           let goalsHome = null;
           let goalsAway = null;
           if (m.status === "Played" && m.result && m.result.indexOf("-") !== -1) {
@@ -416,52 +380,23 @@ async function runBackgroundSync(dbArchivio, dbSoglie) {
             goalsAway = parseInt(score[1].trim(), 10);
           }
 
-          // RISOLUZIONE ALIAS SQUADRA IN CASA (con Cache)
-          const homeName = m.homeTeam;
-          let homeLocalId = null;
-          if (aliasCache[homeName] !== undefined) {
-            homeLocalId = aliasCache[homeName];
-          } else {
-            const aliasRes = await dbArchivio.prepare("SELECT team_id FROM team_aliases WHERE alias = ?").bind(homeName).first();
-            if (aliasRes) {
-              homeLocalId = aliasRes.team_id;
-              aliasCache[homeName] = homeLocalId;
-            } else {
-              // Squadra sconosciuta: la inseriamo con team_id = NULL in archivio_partite
-              await dbArchivio.prepare("INSERT OR IGNORE INTO team_aliases (alias, team_id) VALUES (?, NULL)").bind(homeName).run();
-              aliasCache[homeName] = null;
-            }
-          }
-
-          // RISOLUZIONE ALIAS SQUADRA OSPITE (con Cache)
-          const awayName = m.awayTeam;
-          let awayLocalId = null;
-          if (aliasCache[awayName] !== undefined) {
-            awayLocalId = aliasCache[awayName];
-          } else {
-            const aliasRes = await dbArchivio.prepare("SELECT team_id FROM team_aliases WHERE alias = ?").bind(awayName).first();
-            if (aliasRes) {
-              awayLocalId = aliasRes.team_id;
-              aliasCache[awayName] = awayLocalId;
-            } else {
-              // Squadra sconosciuta: la inseriamo con team_id = NULL in archivio_partite
-              await dbArchivio.prepare("INSERT OR IGNORE INTO team_aliases (alias, team_id) VALUES (?, NULL)").bind(awayName).run();
-              aliasCache[awayName] = null;
-            }
-          }
+          // MODIFICA 3: Disabilitata temporaneamente la validazione degli alias.
+          // Impostiamo homeLocalId e awayLocalId a 0, in modo da scaricare e memorizzare tutto immediatamente.
+          const homeLocalId = 0;
+          const awayLocalId = 0;
 
           statements.push(
             dbSoglie.prepare(queryInsert).bind(
               m.id,
-              0, // ID di default per la lega
+              0, 
               divCode,
               roundString,
               timestampPartita,
-              0, // ID fittizio API Casa
-              homeName,
+              0, 
+              m.homeTeam,
               homeLocalId,
-              0, // ID fittizio API Ospite
-              awayName,
+              0, 
+              m.awayTeam,
               awayLocalId,
               goalsHome,
               goalsAway,
@@ -479,13 +414,12 @@ async function runBackgroundSync(dbArchivio, dbSoglie) {
       // Imposta lo stato della lega su "completed" (Verde 🟢)
       await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'completed')").bind(divCode).run();
 
-      // Pausa di sicurezza di 10 secondi per tutelare la stabilità di rete
+      // Pausa di sicurezza di 10 secondi per tutelare i limiti di rete del server
       if (i < leghe.results.length - 1) {
         await delay(10000); 
       }
     }
 
-    // Aggiorna lo stato generale su "idle" al completamento
     const adesso = new Date().toISOString();
     await dbSoglie.batch([
       dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', ?)").bind(adesso),
