@@ -3,12 +3,17 @@ export default {
     const url = new URL(request.url);
     const dbArchivio = env.DB_ARCHIVIO;
     const dbSoglie = env.DB_SOGLIE;
-    const apiKey = env.API_FOOTBALL_KEY || "10f28027ede24679b3c8d4b9cfc8948e";
+    
+    // SISTEMA DI CONTROLLO BLINDATO DELLA CHIAVE API
+    // Se la variabile di Cloudflare è vuota o scritta come stringa "undefined", forziamo la tua chiave reale
+    let apiKey = env.API_FOOTBALL_KEY;
+    if (!apiKey || apiKey === "undefined" || apiKey.trim() === "") {
+      apiKey = "10f28027ede24679b3c8d4b9cfc8948e";
+    }
 
     // 1. ROTTA PRINCIPALE (DASHBOARD)
     if (url.pathname === "/") {
       try {
-        // Recupera i valori di stato dal database SOGLIE
         const limitRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'limit'").first();
         const remainRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'remaining'").first();
         const lastSyncRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'last_sync'").first();
@@ -21,11 +26,9 @@ export default {
         const syncStatus = statusRes ? statusRes.value : "idle";
         const syncError = errorRes ? errorRes.value : null;
 
-        // Conta le partite salvate
         const countRes = await dbSoglie.prepare("SELECT COUNT(*) as totale FROM calendario_partite").first();
         const totalePartite = countRes ? countRes.totale : 0;
 
-        // Costruiamo l'HTML
         let html = "<!DOCTYPE html><html><head><title>Goldbet Legislatore - Sync</title>";
         html += "<style>";
         html += "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px; margin: 0; }";
@@ -40,15 +43,14 @@ export default {
         html += ".stat-item { margin-bottom: 10px; font-size: 15px; }";
         html += ".stat-label { color: #94a3b8; }";
         html += ".stat-val { font-weight: bold; color: #f1f5f9; }";
-        html += ".status-running { color: #f59e0b; font-weight: bold; animation: pulse 2s infinite; }";
-        html += ".error-box { background: #ef444422; border-left: 4px solid #ef4444; padding: 15px; margin-top: 20px; border-radius: 4px; color: #fca5a5; }";
+        html += ".status-running { color: #f59e0b; font-weight: bold; }";
+        html += ".error-box { background: #ef444422; border-left: 4px solid #ef4444; padding: 15px; margin-top: 20px; border-radius: 4px; color: #fca5a5; font-size: 14px; line-height: 1.5; }";
         html += "</style></head><body>";
         html += "<div class='container'>";
         html += "<div class='badge'>API Rimaste: " + apiRemaining + " / " + apiLimit + "</div>";
         html += "<h1>Sincronizzatore Calendari</h1>";
         html += "<p>Questo modulo scarica in background le partite future dei campionati attivi da API-Football e le memorizza nel database 'soglie_campionati'.</p>";
         
-        // Se sta già sincronizzando, disabilitiamo il pulsante e mostriamo lo stato
         if (syncStatus === "running") {
           html += "<button class='btn' disabled>Sincronizzazione in corso...</button>";
           html += "<p class='status-running'>La sincronizzazione è attiva in background. Ricarica la pagina tra 30 secondi per vedere i risultati.</p>";
@@ -58,7 +60,6 @@ export default {
           html += "</form>";
         }
 
-        // Se c'è stato un errore nell'ultimo ciclo, lo mostriamo qui
         if (syncError) {
           html += "<div class='error-box'><strong>Ultimo Errore registrato:</strong> " + syncError + "</div>";
         }
@@ -80,24 +81,23 @@ export default {
     // 2. ROTTA POST /sync (AVVIO DELLA CODA IN BACKGROUND)
     if (url.pathname === "/sync" && request.method === "POST") {
       try {
-        // Controlla se la sincronizzazione è già in corso per evitare doppie chiamate
         const statusCheck = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
         if (statusCheck && statusCheck.value === "running") {
           return new Response("", { status: 303, headers: { "Location": "/" } });
         }
 
-        // Imposta lo stato su "running" e resetta gli errori
         await dbSoglie.batch([
           dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'running')"),
           dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', NULL)")
         ]);
 
-        // Lanciamo il processo pesante in background usando ctx.waitUntil
+        // Stampiamo un log di controllo per verificare quale chiave stiamo caricando
+        console.log("Inizio sincronizzazione. Chiave utilizzata (prime 4 lettere): " + apiKey.substring(0, 4));
+
         ctx.waitUntil(
           runBackgroundSync(dbArchivio, dbSoglie, apiKey)
         );
 
-        // Rispondiamo ISTANTANEAMENTE al browser reindirizzandolo alla home
         return new Response("", {
           status: 303,
           headers: { "Location": "/" }
@@ -112,7 +112,7 @@ export default {
   }
 };
 
-// FUNZIONE IN BACKGROUND (Eseguita in parallelo senza bloccare il browser)
+// FUNZIONE IN BACKGROUND
 async function runBackgroundSync(dbArchivio, dbSoglie, apiKey) {
   try {
     const leghe = await dbArchivio.prepare("SELECT div, api_id FROM regole_leghe WHERE api_id > 0").all();
@@ -133,13 +133,13 @@ async function runBackgroundSync(dbArchivio, dbSoglie, apiKey) {
       const divCode = lega.div;
       const apiId = lega.api_id;
 
+      // Chiamata con Header pulito e specifico per API-Sports
       const apiResponse = await fetch(
         "https://v3.football.api-sports.io/fixtures?league=" + apiId + "&season=" + stagioneCorrente,
         {
           method: "GET",
           headers: {
-            "x-apisports-key": apiKey,
-            "x-rapidapi-key": apiKey
+            "x-apisports-key": apiKey
           }
         }
       );
@@ -156,7 +156,6 @@ async function runBackgroundSync(dbArchivio, dbSoglie, apiKey) {
 
       const data = await apiResponse.json();
 
-      // Se l'API restituisce messaggi di errore (es. chiave non valida o limite superato)
       if (data.errors && Object.keys(data.errors).length > 0) {
         const errorMsg = JSON.stringify(data.errors);
         throw new Error("Errore da API-Football: " + errorMsg);
@@ -197,13 +196,11 @@ async function runBackgroundSync(dbArchivio, dbSoglie, apiKey) {
         }
       }
 
-      // Ritardo controllato per non sovraccaricare la connessione o l'API
       if (i < leghe.results.length - 1) {
         await delay(1200); 
       }
     }
 
-    // Aggiorna lo stato su "idle" al completamento con successo
     const adesso = new Date().toISOString();
     await dbSoglie.batch([
       dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('limit', ?)").bind(lastLimit),
@@ -213,7 +210,6 @@ async function runBackgroundSync(dbArchivio, dbSoglie, apiKey) {
     ]);
 
   } catch (err) {
-    // In caso di errore durante l'esecuzione in background, salviamo l'errore nel database e liberiamo lo stato
     console.error("Errore background sync: " + err.message);
     try {
       await dbSoglie.batch([
