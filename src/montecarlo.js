@@ -1,28 +1,31 @@
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const db = env.DB;
     
-    // Configura la chiave API (Usa quella fornita o una variabile d'ambiente se presente)
+    // Assegnazione dei database D1 dai binding del wrangler.toml
+    const dbArchivio = env.DB_ARCHIVIO;
+    const dbSoglie = env.DB_SOGLIE;
+    
+    // Configura la chiave API (Utilizza la chiave fornita o una variabile segreta se configurata)
     const apiKey = env.API_FOOTBALL_KEY || "10f28027ede24679b3c8d4b9cfc8948e";
 
-    // Gestione della rotta principale (Interfaccia Dashboard con indicatore in alto a destra)
+    // Gestione della rotta principale (Dashboard di controllo con indicatore API rimaste)
     if (url.pathname === "/") {
       try {
-        // Recupera i limiti API salvati nel database
-        const limitRes = await db.prepare("SELECT value FROM api_status WHERE metric = 'limit'").first();
-        const remainRes = await db.prepare("SELECT value FROM api_status WHERE metric = 'remaining'").first();
-        const lastSyncRes = await db.prepare("SELECT value FROM api_status WHERE metric = 'last_sync'").first();
+        // Recupera i limiti API memorizzati nel DB SOGLIE
+        const limitRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'limit'").first();
+        const remainRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'remaining'").first();
+        const lastSyncRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'last_sync'").first();
         
         const apiLimit = limitRes ? limitRes.value : "100";
         const apiRemaining = remainRes ? remainRes.value : "100";
         const lastSync = lastSyncRes ? lastSyncRes.value : "Mai sincronizzato";
 
-        // Conta quante partite abbiamo in totale nel calendario locale
-        const countRes = await db.prepare("SELECT COUNT(*) as totale FROM calendario_partite").first();
+        // Conta le partite salvate nel calendario locale del DB SOGLIE
+        const countRes = await dbSoglie.prepare("SELECT COUNT(*) as totale FROM calendario_partite").first();
         const totalePartite = countRes ? countRes.totale : 0;
 
-        // Costruiamo l'HTML senza usare backtick o barre rovesciate
+        // Costruzione dell'HTML mediante concatenazione stringhe pulite (senza backtick)
         let html = "<!DOCTYPE html><html><head><title>Goldbet Legislatore - Sync</title>";
         html += "<style>";
         html += "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px; margin: 0; }";
@@ -40,7 +43,7 @@ export default {
         html += "<div class='container'>";
         html += "<div class='badge'>API Rimaste: " + apiRemaining + " / " + apiLimit + "</div>";
         html += "<h1>Sincronizzatore Calendari</h1>";
-        html += "<p>Questo modulo scarica in modo sicuro le partite future dei campionati attivi da API-Football e le memorizza nel database locale 'soglie_scommesse'. Una volta salvati i dati, i moduli predittivi potranno lavorare interamente offline.</p>";
+        html += "<p>Questo modulo scarica in modo sicuro le partite future dei campionati attivi da API-Football e le memorizza nel database locale 'soglie_campionati'. I dati vengono allineati con i campionati censiti in 'archivio_partite'.</p>";
         
         html += "<form action='/sync' method='POST'>";
         html += "<button type='submit' class='btn'>Avvia Sincronizzazione Ora</button>";
@@ -60,31 +63,29 @@ export default {
       }
     }
 
-    // Rotta POST /sync per avviare la sincronizzazione (gestisce limiti di tempo e rate limit dell'API)
+    // Rotta POST /sync per avviare il processo di importazione
     if (url.pathname === "/sync" && request.method === "POST") {
       try {
-        // 1. Recupera le leghe attive dal Worker Legislatore (o dalla tabella locale regole_leghe)
-        // Estraiamo solo le leghe che hanno un api_id maggiore di 0
-        const leghe = await db.prepare("SELECT div, api_id FROM regole_leghe WHERE api_id > 0").all();
+        // 1. LEGGE LE REGOLE DAL DATABASE ARCHIVIO_PARTITE (dove risiede regole_leghe)
+        const leghe = await dbArchivio.prepare("SELECT div, api_id FROM regole_leghe WHERE api_id > 0").all();
         
         if (!leghe.results || leghe.results.length === 0) {
-          return new Response("Nessun campionato attivo con un api_id valido trovato in regole_leghe.", { status: 400 });
+          return new Response("Nessun campionato attivo con un api_id valido trovato in regole_leghe (DB_ARCHIVIO).", { status: 400 });
         }
 
         let totaleInserite = 0;
         let lastLimit = "100";
         let lastRemaining = "100";
-        const stagioneCorrente = "2024"; // Puoi renderla dinamica se preferisci
+        const stagioneCorrente = "2024";
 
-        // Definiamo un ritardo tra le chiamate (es. 1.2 secondi) per evitare il blocco per-minute (solitamente max 10 o 30 req/min)
         const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+        // Loop di richiesta sequenziale per rispettare i limiti di frequenza dell'API
         for (let i = 0; i < leghe.results.length; i++) {
           const lega = leghe.results[i];
           const divCode = lega.div;
           const apiId = lega.api_id;
 
-          // Chiamata ad API-Football per il campionato corrente
           const apiResponse = await fetch(
             "https://v3.football.api-sports.io/fixtures?league=" + apiId + "&season=" + stagioneCorrente,
             {
@@ -101,7 +102,6 @@ export default {
             continue;
           }
 
-          // Leggi i limiti API dalle intestazioni (headers) di risposta per aggiornare l'indicatore
           const hLimit = apiResponse.headers.get("x-ratelimit-requests-limit");
           const hRemaining = apiResponse.headers.get("x-ratelimit-requests-remaining");
           if (hLimit) lastLimit = hLimit;
@@ -112,7 +112,7 @@ export default {
           if (data.response && data.response.length > 0) {
             const matches = data.response;
             
-            // Per ottimizzare le scritture su D1 utilizziamo un batch statement
+            // Query di inserimento sul database SOGLIE
             const queryInsert = "INSERT OR REPLACE INTO calendario_partite (fixture_id, league_id, league_div, round, event_date, home_team_id_api, home_team_name_api, away_team_id_api, away_team_name_api, goals_home, goals_away, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             
             const statements = [];
@@ -123,7 +123,7 @@ export default {
               const goalsAway = m.goals.away !== null ? m.goals.away : null;
 
               statements.push(
-                db.prepare(queryInsert).bind(
+                dbSoglie.prepare(queryInsert).bind(
                   m.fixture.id,
                   m.league.id,
                   divCode,
@@ -140,29 +140,27 @@ export default {
               );
             }
 
-            // Esegui la scrittura di massa in modo super efficiente e protetto
+            // Scrittura batch protetta sul database SOGLIE
             if (statements.length > 0) {
-              await db.batch(statements);
+              await dbSoglie.batch(statements);
               totaleInserite += statements.length;
             }
           }
 
-          // Rispetta il rate-limit di API-Football aspettando tra una chiamata e l'altra
           if (i < leghe.results.length - 1) {
             await delay(1200); 
           }
         }
 
-        // Aggiorna lo stato dei crediti API e la data di sincronizzazione nel DB
+        // 2. SCRIVE LO STATO DELL'API NEL DATABASE SOGLIE
         const adesso = new Date().toISOString();
-        await db.batch([
-          db.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('limit', ?)").bind(lastLimit),
-          db.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('remaining', ?)").bind(lastRemaining),
-          db.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', ?)").bind(adesso)
+        await dbSoglie.batch([
+          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('limit', ?)").bind(lastLimit),
+          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('remaining', ?)").bind(lastRemaining),
+          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', ?)").bind(adesso)
         ]);
 
-        // Reindirizza l'utente alla dashboard per vedere i dati aggiornati
-        return new Response("Sincronizzazione completata con successo! Partite elaborate: " + totaleInserite, {
+        return new Response("Sincronizzazione completata! Partite elaborate in " + dbSoglie.name + ": " + totaleInserite, {
           status: 303,
           headers: { "Location": "/" }
         });
@@ -172,7 +170,6 @@ export default {
       }
     }
 
-    // Risposta predefinita per rotte non trovate
     return new Response("Risorsa non trovata", { status: 404 });
   }
 };
