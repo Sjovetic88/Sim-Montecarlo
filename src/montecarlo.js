@@ -1,1419 +1,178 @@
-/**
- * GOLDBET SIMULATOR v1.0 - MODULO 4: PREDICTIVE INTELLIGENCE SUITE
- * 
- * Sviluppato come "Monolito Serverless" (Strada B):
- * - "/" o "/dashboard" : Dashboard HTML/CSS/JS (Tailwind, OLED Black)
- * - "/api/leagues"     : Elenco delle leghe configurate da classifica_elite
- * - "/api/projections" : Simulazioni Monte Carlo (10.000 iterazioni standard/nitro)
- * - "/api/expected-points" : Expected Points (xPTS) con statistiche Totali, Casa, Trasferta
- * - "/api/chaos-map"   : Mappa del Caos con Shock Match e Sfascia-Pronostici (anti-timeout)
- * - "/api/real-form"   : Analisi Forma Reale (Analisi ponderata temporale degli ultimi 5 match)
- * - "/api/debug"       : Diagnostica delle tabelle D1
- */
-
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const path = url.pathname;
+    const db = env.DB;
+    
+    // Configura la chiave API (Usa quella fornita o una variabile d'ambiente se presente)
+    const apiKey = env.API_FOOTBALL_KEY || "10f28027ede24679b3c8d4b9cfc8948e";
 
-    try {
-      // 0. Dashboard Grafica Principale (OLED Black / GOLDBET SIMULATOR Style)
-      if (path === "/" || path === "/dashboard") {
-        return new Response(HTML_DASHBOARD, {
+    // Gestione della rotta principale (Interfaccia Dashboard con indicatore in alto a destra)
+    if (url.pathname === "/") {
+      try {
+        // Recupera i limiti API salvati nel database
+        const limitRes = await db.prepare("SELECT value FROM api_status WHERE metric = 'limit'").first();
+        const remainRes = await db.prepare("SELECT value FROM api_status WHERE metric = 'remaining'").first();
+        const lastSyncRes = await db.prepare("SELECT value FROM api_status WHERE metric = 'last_sync'").first();
+        
+        const apiLimit = limitRes ? limitRes.value : "100";
+        const apiRemaining = remainRes ? remainRes.value : "100";
+        const lastSync = lastSyncRes ? lastSyncRes.value : "Mai sincronizzato";
+
+        // Conta quante partite abbiamo in totale nel calendario locale
+        const countRes = await db.prepare("SELECT COUNT(*) as totale FROM calendario_partite").first();
+        const totalePartite = countRes ? countRes.totale : 0;
+
+        // Costruiamo l'HTML senza usare backtick o barre rovesciate
+        let html = "<!DOCTYPE html><html><head><title>Goldbet Legislatore - Sync</title>";
+        html += "<style>";
+        html += "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px; margin: 0; }";
+        html += ".container { max-width: 800px; margin: 0 auto; background: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); position: relative; }";
+        html += ".badge { position: absolute; top: 30px; right: 30px; background: #0ea5e9; color: #fff; padding: 8px 16px; border-radius: 20px; font-weight: bold; font-size: 14px; box-shadow: 0 0 10px rgba(14,165,233,0.3); }";
+        html += "h1 { color: #38bdf8; margin-top: 0; }";
+        html += "p { color: #94a3b8; font-size: 16px; line-height: 1.6; }";
+        html += ".btn { display: inline-block; background: #10b981; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; text-decoration: none; font-size: 16px; margin-top: 20px; transition: background 0.2s; }";
+        html += ".btn:hover { background: #059669; }";
+        html += ".stats { margin-top: 30px; border-top: 1px solid #334155; padding-top: 20px; }";
+        html += ".stat-item { margin-bottom: 10px; font-size: 15px; }";
+        html += ".stat-label { color: #94a3b8; }";
+        html += ".stat-val { font-weight: bold; color: #f1f5f9; }";
+        html += "</style></head><body>";
+        html += "<div class='container'>";
+        html += "<div class='badge'>API Rimaste: " + apiRemaining + " / " + apiLimit + "</div>";
+        html += "<h1>Sincronizzatore Calendari</h1>";
+        html += "<p>Questo modulo scarica in modo sicuro le partite future dei campionati attivi da API-Football e le memorizza nel database locale 'soglie_scommesse'. Una volta salvati i dati, i moduli predittivi potranno lavorare interamente offline.</p>";
+        
+        html += "<form action='/sync' method='POST'>";
+        html += "<button type='submit' class='btn'>Avvia Sincronizzazione Ora</button>";
+        html += "</form>";
+
+        html += "<div class='stats'>";
+        html += "<div class='stat-item'><span class='stat-label'>Ultimo aggiornamento: </span><span class='stat-val'>" + lastSync + "</span></div>";
+        html += "<div class='stat-item'><span class='stat-label'>Partite attualmente salvate: </span><span class='stat-val'>" + totalePartite + "</span></div>";
+        html += "</div>";
+        html += "</div></body></html>";
+
+        return new Response(html, {
           headers: { "Content-Type": "text/html; charset=utf-8" }
         });
+      } catch (err) {
+        return new Response("Errore nel caricamento della dashboard: " + err.message, { status: 500 });
       }
+    }
 
-      // 1. Endpoint: Elenco delle Leghe attive presenti in classifica_elite (Bug Risolto!)
-      if (path === "/api/leagues") {
-        const leagues = await env.DB_ARCHIVIO.prepare(`
-          SELECT DISTINCT rl.div, rl.nazione, rl.descrizione 
-          FROM regole_leghe rl
-          JOIN classifica_elite ce ON rl.div = ce.ultima_div
-          ORDER BY rl.nazione ASC
-        `).all();
-        return jsonResponse(leagues.results);
-      }
-
-      // 2. Endpoint: Diagnostica di Sistema
-      if (path === "/api/debug") {
-        const debugData = await runDiagnostics(env);
-        return jsonResponse(debugData);
-      }
-
-      // 3. Endpoint: Monte Carlo Proiezioni
-      if (path === "/api/projections") {
-        const league = url.searchParams.get("league");
-        if (!league) return jsonResponse({ error: "Parametro 'league' mancante." }, 400);
-
-        const forceSimulate = url.searchParams.get("nitro") === "true";
-
-        if (forceSimulate) {
-          // Nitro Mode elevata a 10.000 simulazioni ad alta precisione
-          const result = await runMonteCarloSimulation(league, 10000, env);
-          return jsonResponse({ mode: "nitro", ...result });
+    // Rotta POST /sync per avviare la sincronizzazione (gestisce limiti di tempo e rate limit dell'API)
+    if (url.pathname === "/sync" && request.method === "POST") {
+      try {
+        // 1. Recupera le leghe attive dal Worker Legislatore (o dalla tabella locale regole_leghe)
+        // Estraiamo solo le leghe che hanno un api_id maggiore di 0
+        const leghe = await db.prepare("SELECT div, api_id FROM regole_leghe WHERE api_id > 0").all();
+        
+        if (!leghe.results || leghe.results.length === 0) {
+          return new Response("Nessun campionato attivo con un api_id valido trovato in regole_leghe.", { status: 400 });
         }
 
-        const cacheKey = new Request(url.toString(), request);
-        const cache = caches.default;
-        let cachedResponse = await cache.match(cacheKey);
-        if (cachedResponse) return cachedResponse;
+        let totaleInserite = 0;
+        let lastLimit = "100";
+        let lastRemaining = "100";
+        const stagioneCorrente = "2024"; // Puoi renderla dinamica se preferisci
 
-        const projections = await env.DB_PRONOSTICI.prepare(
-          "SELECT * FROM proiezioni_finali WHERE campionato = ? ORDER BY scudetto_prob DESC, xpts_mediana DESC"
-        ).bind(league).all();
+        // Definiamo un ritardo tra le chiamate (es. 1.2 secondi) per evitare il blocco per-minute (solitamente max 10 o 30 req/min)
+        const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-        const response = jsonResponse({ mode: "cached_db", results: projections.results });
-        ctx.waitUntil(cache.put(cacheKey, response.clone()));
-        return response;
+        for (let i = 0; i < leghe.results.length; i++) {
+          const lega = leghe.results[i];
+          const divCode = lega.div;
+          const apiId = lega.api_id;
+
+          // Chiamata ad API-Football per il campionato corrente
+          const apiResponse = await fetch(
+            "https://v3.football.api-sports.io/fixtures?league=" + apiId + "&season=" + stagioneCorrente,
+            {
+              method: "GET",
+              headers: {
+                "x-apisports-key": apiKey,
+                "x-rapidapi-key": apiKey
+              }
+            }
+          );
+
+          if (!apiResponse.ok) {
+            console.log("Errore chiamata API per lega " + divCode);
+            continue;
+          }
+
+          // Leggi i limiti API dalle intestazioni (headers) di risposta per aggiornare l'indicatore
+          const hLimit = apiResponse.headers.get("x-ratelimit-requests-limit");
+          const hRemaining = apiResponse.headers.get("x-ratelimit-requests-remaining");
+          if (hLimit) lastLimit = hLimit;
+          if (hRemaining) lastRemaining = hRemaining;
+
+          const data = await apiResponse.json();
+
+          if (data.response && data.response.length > 0) {
+            const matches = data.response;
+            
+            // Per ottimizzare le scritture su D1 utilizziamo un batch statement
+            const queryInsert = "INSERT OR REPLACE INTO calendario_partite (fixture_id, league_id, league_div, round, event_date, home_team_id_api, home_team_name_api, away_team_id_api, away_team_name_api, goals_home, goals_away, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            
+            const statements = [];
+            
+            for (let j = 0; j < matches.length; j++) {
+              const m = matches[j];
+              const goalsHome = m.goals.home !== null ? m.goals.home : null;
+              const goalsAway = m.goals.away !== null ? m.goals.away : null;
+
+              statements.push(
+                db.prepare(queryInsert).bind(
+                  m.fixture.id,
+                  m.league.id,
+                  divCode,
+                  m.league.round,
+                  m.fixture.date,
+                  m.teams.home.id,
+                  m.teams.home.name,
+                  m.teams.away.id,
+                  m.teams.away.name,
+                  goalsHome,
+                  goalsAway,
+                  m.fixture.status.short
+                )
+              );
+            }
+
+            // Esegui la scrittura di massa in modo super efficiente e protetto
+            if (statements.length > 0) {
+              await db.batch(statements);
+              totaleInserite += statements.length;
+            }
+          }
+
+          // Rispetta il rate-limit di API-Football aspettando tra una chiamata e l'altra
+          if (i < leghe.results.length - 1) {
+            await delay(1200); 
+          }
+        }
+
+        // Aggiorna lo stato dei crediti API e la data di sincronizzazione nel DB
+        const adesso = new Date().toISOString();
+        await db.batch([
+          db.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('limit', ?)").bind(lastLimit),
+          db.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('remaining', ?)").bind(lastRemaining),
+          db.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', ?)").bind(adesso)
+        ]);
+
+        // Reindirizza l'utente alla dashboard per vedere i dati aggiornati
+        return new Response("Sincronizzazione completata con successo! Partite elaborate: " + totaleInserite, {
+          status: 303,
+          headers: { "Location": "/" }
+        });
+
+      } catch (err) {
+        return new Response("Errore durante la sincronizzazione: " + err.message, { status: 500 });
       }
-
-      // 4. Endpoint: Classifica di Merito Completa (xPTS Totale/Casa/Trasferta)
-      if (path === "/api/expected-points") {
-        const league = url.searchParams.get("league");
-        if (!league) return jsonResponse({ error: "Parametro 'league' mancante." }, 400);
-
-        const xptsTable = await calculateExpectedPoints(league, env);
-        return jsonResponse(xptsTable);
-      }
-
-      // 5. Endpoint: La Mappa del Caos (Chaos Map con Shock Match e Sfascia-Pronostici)
-      if (path === "/api/chaos-map") {
-        const chaosMap = await calculateChaosMap(env);
-        return jsonResponse(chaosMap);
-      }
-
-      // 6. Endpoint: Forma Reale Ponderata (Last 5 Matches)
-      if (path === "/api/real-form") {
-        const league = url.searchParams.get("league");
-        if (!league) return jsonResponse({ error: "Parametro 'league' mancante." }, 400);
-
-        const realForm = await calculateRealForm(league, env);
-        return jsonResponse(realForm);
-      }
-
-      return jsonResponse({ error: "Endpoint non trovato." }, 404);
-
-    } catch (err) {
-      return jsonResponse({ error: "Internal Server Error", details: err.message }, 500);
     }
-  },
 
-  // Cron Trigger orario per calcolo differito a 10.000 iterazioni
-  async scheduled(event, env, ctx) {
-    ctx.waitUntil(handleScheduledSimulation(env));
+    // Risposta predefinita per rotte non trovate
+    return new Response("Risorsa non trovata", { status: 404 });
   }
 };
-
-// --- STRUMENTO DI DIAGNOSTICA (DEBUG) ---
-
-async function runDiagnostics(env) {
-  const diagnostics = { database_archivio: {}, database_pronostici: {}, allineamento_codici: {} };
-  try {
-    const regoleCount = await env.DB_ARCHIVIO.prepare("SELECT COUNT(*) as count FROM regole_leghe").first();
-    const matchesCount = await env.DB_ARCHIVIO.prepare("SELECT COUNT(*) as count FROM matches").first();
-    const ratingsCount = await env.DB_ARCHIVIO.prepare("SELECT COUNT(*) as count FROM classifica_elite").first();
-    const lastSeason = await env.DB_ARCHIVIO.prepare("SELECT MAX(season) as season FROM matches").first();
-
-    diagnostics.database_archivio = {
-      righe_regole_leghe: regoleCount?.count || 0,
-      righe_matches: matchesCount?.count || 0,
-      righe_classifica_elite: ratingsCount?.count || 0,
-      stagione_piu_recente_globale: lastSeason?.season || "Nessuna"
-    };
-
-    const parametriCount = await env.DB_PRONOSTICI.prepare("SELECT COUNT(*) as count FROM parametri_campionato").first();
-    const proiezioniCount = await env.DB_PRONOSTICI.prepare("SELECT COUNT(*) as count FROM proiezioni_finali").first();
-
-    diagnostics.database_pronostici = {
-      righe_parametri_campionato: parametriCount?.count || 0,
-      righe_proiezioni_finali: proiezioniCount?.count || 0
-    };
-
-    const esempioRegola = await env.DB_ARCHIVIO.prepare("SELECT div FROM regole_leghe LIMIT 3").all();
-    const esempioMatch = await env.DB_ARCHIVIO.prepare("SELECT DISTINCT div FROM matches LIMIT 3").all();
-    const esempioRating = await env.DB_ARCHIVIO.prepare("SELECT DISTINCT ultima_div FROM classifica_elite LIMIT 3").all();
-
-    diagnostics.allineamento_codici = {
-      sigle_in_regole_leghe: esempioRegola.results.map(r => r.div),
-      sigle_in_matches: esempioMatch.results.map(r => r.div),
-      sigle_in_classifica_elite: esempioRating.results.map(r => r.ultima_div)
-    };
-  } catch (err) {
-    diagnostics.errore_diagnostica = err.message;
-  }
-  return diagnostics;
-}
-
-// --- FUNZIONI DI SUPPORTO E CALCOLI AUSILIARI ---
-
-function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-      "Cache-Control": "public, max-age=15"
-    }
-  });
-}
-
-function drawPoisson(lambda) {
-  const L = Math.exp(-lambda);
-  let k = 0;
-  let p = 1;
-  do {
-    k++;
-    p *= Math.random();
-  } while (p > L);
-  return k - 1;
-}
-
-function getDixonColesTau(x, y, lambda, mu, rho) {
-  if (x === 0 && y === 0) return 1 - lambda * mu * rho;
-  if (x === 1 && y === 0) return 1 + mu * rho;
-  if (x === 0 && y === 1) return 1 + lambda * rho;
-  if (x === 1 && y === 1) return 1 - rho;
-  return 1;
-}
-
-async function getCurrentSeason(league, env) {
-  const res = await env.DB_ARCHIVIO.prepare(
-    "SELECT MAX(season) as current_season FROM matches WHERE div = ?"
-  ).bind(league).first();
-  return res?.current_season || null;
-}
-
-// Normalizzazione unicode e di battitura per eliminare i duplicati (Bug 1 Risolto!)
-function sanitizeTeamName(name) {
-  if (!name) return "";
-  return name.replace(/\s+/g, ' ').replace(/\u00a0/g, ' ').toUpperCase().trim();
-}
-
-// --- CORE ENGINE 1: SIMULATORE MONTE CARLO ---
-
-async function runMonteCarloSimulation(league, iterations, env) {
-  const rules = await env.DB_ARCHIVIO.prepare(
-    "SELECT * FROM regole_leghe WHERE div = ?"
-  ).bind(league).first();
-  if (!rules) return { results: [], message: "Regole non configurate" };
-
-  const calibration = await env.DB_PRONOSTICI.prepare(
-    "SELECT current_rho FROM parametri_campionato WHERE campionato = ?"
-  ).bind(league).first();
-  const rho = calibration?.current_rho || 0;
-
-  const currentSeason = await getCurrentSeason(league, env);
-  if (!currentSeason) return { results: [], message: "Nessun match disputato per questa lega." };
-
-  // Identificazione dinamica dei soli club attivi nella stagione corrente (Risolve il Bug di Colon)
-  const activeTeamsRes = await env.DB_ARCHIVIO.prepare(`
-    SELECT DISTINCT ht.name as team_name
-    FROM matches m
-    JOIN teams ht ON m.home_team_id = ht.id
-    WHERE m.div = ? AND m.season = ?
-    UNION
-    SELECT DISTINCT at.name as team_name
-    FROM matches m
-    JOIN teams at ON m.away_team_id = at.id
-    WHERE m.div = ? AND m.season = ?
-  `).bind(league, currentSeason, league, currentSeason).all();
-
-  const activeTeamNames = new Set(activeTeamsRes.results.map(r => sanitizeTeamName(r.team_name)));
-
-  // Lettura da classifica_elite
-  const teamRows = await env.DB_ARCHIVIO.prepare(`
-    SELECT nome_display AS team_name, elo_raw AS elo, attacco AS alpha, difesa AS beta, h_factor 
-    FROM classifica_elite 
-    WHERE ultima_div = ?
-  `).bind(league).all();
-  
-  // Filtriamo mantenendo solo le squadre attive nella stagione in corso ed eliminando i duplicati strutturali
-  const seen = new Set();
-  const teams = [];
-  teamRows.results.forEach(t => {
-    const norm = sanitizeTeamName(t.team_name);
-    if (activeTeamNames.has(norm) && !seen.has(norm)) {
-      seen.add(norm);
-      teams.push(t);
-    }
-  });
-  
-  if (teams.length === 0) {
-    return { results: [], message: "Nessun club attivo calcolato per la lega: " + league };
-  }
-
-  const teamMap = new Map();
-  teams.forEach(t => {
-    teamMap.set(sanitizeTeamName(t.team_name), {
-      name: t.team_name,
-      elo: t.elo,
-      alpha: t.alpha,
-      beta: t.beta,
-      hFactor: t.h_factor || 1.15
-    });
-  });
-
-  const playedMatches = await env.DB_ARCHIVIO.prepare(`
-    SELECT 
-      ht.name as hometeam,
-      at.name as awayteam,
-      m.fthg,
-      m.ftag,
-      m.ftr
-    FROM matches m
-    JOIN teams ht ON m.home_team_id = ht.id
-    JOIN teams at ON m.away_team_id = at.id
-    WHERE m.div = ? AND m.season = ?
-    ORDER BY m.date ASC
-  `).bind(league, currentSeason).all();
-
-  const actualStandings = {};
-  teams.forEach(t => {
-    actualStandings[sanitizeTeamName(t.team_name)] = { points: 0, goalsScored: 0, goalsConceded: 0, played: 0 };
-  });
-
-  playedMatches.results.forEach(m => {
-    const homeKey = sanitizeTeamName(m.hometeam);
-    const awayKey = sanitizeTeamName(m.awayteam);
-
-    if (actualStandings[homeKey] && actualStandings[awayKey]) {
-      actualStandings[homeKey].played++;
-      actualStandings[awayKey].played++;
-      actualStandings[homeKey].goalsScored += m.fthg;
-      actualStandings[homeKey].goalsConceded += m.ftag;
-      actualStandings[awayKey].goalsScored += m.ftag;
-      actualStandings[awayKey].goalsConceded += m.fthg;
-
-      if (m.ftr === "H") {
-        actualStandings[homeKey].points += 3;
-      } else if (m.ftr === "A") {
-        actualStandings[awayKey].points += 3;
-      } else {
-        actualStandings[homeKey].points += 1;
-        actualStandings[awayKey].points += 1;
-      }
-    }
-  });
-
-  const playedPairs = new Set(playedMatches.results.map(m => `${sanitizeTeamName(m.hometeam)}||${sanitizeTeamName(m.awayteam)}`));
-  const remainingCalendar = [];
-  
-  for (let i = 0; i < teams.length; i++) {
-    for (let j = 0; j < teams.length; j++) {
-      if (i === j) continue;
-      const home = sanitizeTeamName(teams[i].team_name);
-      const away = sanitizeTeamName(teams[j].team_name);
-      if (!playedPairs.has(`${home}||${away}`)) {
-        remainingCalendar.push({ home, away });
-      }
-    }
-  }
-
-  const resolvedCalendar = remainingCalendar.map(match => {
-    return {
-      homeKey: match.home,
-      awayKey: match.away,
-      homeObj: teamMap.get(match.home),
-      awayObj: teamMap.get(match.away)
-    };
-  }).filter(m => m.homeObj && m.awayObj);
-
-  const stats = {};
-  teams.forEach(t => {
-    stats[sanitizeTeamName(t.team_name)] = {
-      name: t.team_name,
-      scudetto: 0, ucl: 0, uel: 0, uecl: 0, promo: 0, retro: 0, playoff: 0, playout: 0,
-      totalPoints: 0
-    };
-  });
-
-  const numTeams = teams.length; 
-  const isPointHalvingLeague = (league.startsWith("B") || league.startsWith("AUT"));
-
-  for (let sim = 0; sim < iterations; sim++) {
-    const simStandings = {};
-    teams.forEach(t => {
-      const key = sanitizeTeamName(t.team_name);
-      simStandings[key] = { 
-        points: actualStandings[key].points,
-        goalsScored: actualStandings[key].goalsScored,
-        goalsConceded: actualStandings[key].goalsConceded,
-        played: actualStandings[key].played
-      };
-    });
-
-    // 1. Fase Standard
-    for (const match of resolvedCalendar) {
-      if (rules.soglia_split > 0 && simStandings[match.homeKey].played >= rules.soglia_split) {
-        continue; 
-      }
-      simulateResolvedMatch(match, simStandings, rho, rules.giornate_totali, false);
-    }
-
-    // 2. Fase Split Reale (Opzione B)
-    if (rules.soglia_split > 0) {
-      const midStandings = Object.keys(simStandings).map(key => ({
-        key,
-        points: simStandings[key].points,
-        goalsDiff: simStandings[key].goalsScored - simStandings[key].goalsConceded,
-        goalsScored: simStandings[key].goalsScored
-      })).sort((a, b) => b.points - a.points || b.goalsDiff - a.goalsDiff || b.goalsScored - a.goalsScored);
-
-      const midTopGroup = new Set(midStandings.slice(0, numTeams / 2).map(x => x.key));
-
-      if (isPointHalvingLeague) {
-        Object.keys(simStandings).forEach(key => {
-          simStandings[key].points = Math.ceil(simStandings[key].points / 2);
-        });
-      }
-
-      const poolTeams = Array.from(midTopGroup);
-      const bottomTeams = Object.keys(simStandings).filter(k => !midTopGroup.has(k));
-
-      simulateSplitPool(poolTeams, simStandings, teamMap, rho, rules.giornate_totali);
-      simulateSplitPool(bottomTeams, simStandings, teamMap, rho, rules.giornate_totali);
-    }
-
-    const finalStandings = Object.keys(simStandings).map(key => ({
-      key,
-      points: simStandings[key].points,
-      goalsDiff: simStandings[key].goalsScored - simStandings[key].goalsConceded,
-      goalsScored: simStandings[key].goalsScored
-    })).sort((a, b) => b.points - a.points || b.goalsDiff - a.goalsDiff || b.goalsScored - a.goalsScored);
-
-    finalStandings.forEach((team, rank) => {
-      const idx = rank + 1;
-      const s = stats[team.key];
-      s.totalPoints += team.points;
-
-      if (idx === 1) s.scudetto++;
-      if (idx > 1 && idx <= rules.posti_ucl) s.ucl++;
-      if (idx > rules.posti_ucl && idx <= (rules.posti_ucl + rules.posti_uel)) s.uel++;
-      if (idx > (rules.posti_ucl + rules.posti_uel) && idx <= (rules.posti_ucl + rules.posti_uel + rules.posti_uecl)) s.uecl++;
-
-      if (rules.posti_promo && idx <= rules.posti_promo) s.promo++;
-      if (rules.playoff && idx > rules.posti_promo && idx <= (rules.posti_promo + rules.playoff)) s.playoff++;
-      if (rules.playout && idx >= (numTeams - rules.posti_retro - rules.playout + 1) && idx <= (numTeams - rules.posti_retro)) s.playout++;
-      if (idx > (numTeams - rules.posti_retro)) s.retro++;
-    });
-  }
-
-  const bulkData = [];
-  const timestamp = new Date().toISOString();
-
-  for (const key of Object.keys(stats)) {
-    const s = stats[key];
-    const item = {
-      campionato: league,
-      squadra: s.name,
-      scudetto_prob: (s.scudetto / iterations) * 100,
-      ucl_prob: ((s.scudetto + s.ucl) / iterations) * 100,
-      uel_prob: (s.uel / iterations) * 100,
-      uecl_prob: (s.uecl / iterations) * 100,
-      promo_prob: (s.promo / iterations) * 100,
-      retro_prob: (s.retro / iterations) * 100,
-      playoff_prob: (s.playoff / iterations) * 100,
-      playout_prob: (s.playout / iterations) * 100,
-      xpts_mediana: s.totalPoints / iterations,
-      ultimo_aggiornamento: timestamp
-    };
-    bulkData.push(item);
-
-    await env.DB_PRONOSTICI.prepare(`
-      INSERT INTO proiezioni_finali 
-      (campionato, squadra, scudetto_prob, ucl_prob, uel_prob, uecl_prob, promo_prob, retro_prob, playoff_prob, playout_prob, xpts_mediana, ultimo_aggiornamento)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(campionato, squadra) DO UPDATE SET
-        scudetto_prob=excluded.scudetto_prob,
-        ucl_prob=excluded.ucl_prob,
-        uel_prob=excluded.uel_prob,
-        uecl_prob=excluded.uecl_prob,
-        promo_prob=excluded.promo_prob,
-        retro_prob=excluded.retro_prob,
-        playoff_prob=excluded.playoff_prob,
-        playout_prob=excluded.playout_prob,
-        xpts_mediana=excluded.xpts_mediana,
-        ultimo_aggiornamento=excluded.ultimo_aggiornamento
-    `).bind(
-      item.campionato, item.squadra, item.scudetto_prob, item.ucl_prob, item.uel_prob, item.uecl_prob,
-      item.promo_prob, item.retro_prob, item.playoff_prob, item.playout_prob, item.xpts_mediana, item.ultimo_aggiornamento
-    ).run();
-  }
-
-  return { league, simulated_matches_remaining: resolvedCalendar.length, iterations, results: bulkData };
-}
-
-// Simulazione dello Split (Bug 4 Risolto)
-function simulateSplitPool(pool, standings, teamMap, rho, maxGames) {
-  for (let i = 0; i < pool.length; i++) {
-    for (let j = 0; j < pool.length; j++) {
-      if (i === j) continue;
-      const homeKey = pool[i];
-      const awayKey = pool[j];
-      
-      const match = {
-        homeKey,
-        awayKey,
-        homeObj: teamMap.get(homeKey),
-        awayObj: teamMap.get(awayKey)
-      };
-      simulateResolvedMatch(match, standings, rho, maxGames, true);
-    }
-  }
-}
-
-function simulateResolvedMatch(match, standings, rho, maxGames, isSplitPhase) {
-  const home = match.homeObj;
-  const away = match.awayObj;
-
-  let alphaH = home.alpha;
-  let betaH = home.beta;
-  let alphaA = away.alpha;
-  let betaA = away.beta;
-
-  const eloDiff = home.elo - away.elo;
-  const eloScale = 1 + eloDiff * 0.0002;
-
-  let lambda = alphaH * betaA * home.hFactor * eloScale;
-  let mu = (alphaA * betaH) / eloScale;
-
-  lambda = Math.max(0.05, Math.min(8.0, lambda));
-  mu = Math.max(0.05, Math.min(8.0, mu));
-
-  // Motivazione dinamica legata allo stato della classifica
-  const gamesLeftH = maxGames - standings[match.homeKey].played;
-  if (gamesLeftH <= 6 || isSplitPhase) {
-    const hPoints = standings[match.homeKey].points;
-    const aPoints = standings[match.awayKey].points;
-    if (Math.abs(hPoints - aPoints) < 6) {
-      lambda *= 1.07; // Incremento tensione scontro diretto (+7%)
-    } else if (hPoints > 44 && hPoints < 52) {
-      lambda *= 0.90; // "Vacanza" mentale per obiettivi raggiunti (-10%)
-    }
-  }
-
-  const homeGoals = drawPoisson(lambda);
-  const awayGoals = drawPoisson(mu);
-
-  let finalHomeGoals = homeGoals;
-  let finalAwayGoals = awayGoals;
-  if (homeGoals <= 1 && awayGoals <= 1) {
-    const tau = getDixonColesTau(homeGoals, awayGoals, lambda, mu, rho);
-    if (Math.random() > tau) {
-      if (Math.random() > 0.5) {
-        finalHomeGoals = finalAwayGoals;
-      }
-    }
-  }
-
-  standings[match.homeKey].played++;
-  standings[match.awayKey].played++;
-  standings[match.homeKey].goalsScored += finalHomeGoals;
-  standings[match.homeKey].goalsConceded += finalAwayGoals;
-  standings[match.awayKey].goalsScored += finalAwayGoals;
-  standings[match.awayKey].goalsConceded += finalHomeGoals;
-
-  if (finalHomeGoals > finalAwayGoals) {
-    standings[match.homeKey].points += 3;
-  } else if (finalAwayGoals > finalHomeGoals) {
-    standings[match.awayKey].points += 3;
-  } else {
-    standings[match.homeKey].points += 1;
-    standings[match.awayKey].points += 1;
-  }
-}
-
-// --- CORE ENGINE 2: CLASSIFICA DI MERITO ---
-
-async function calculateExpectedPoints(league, env) {
-  const currentSeason = await getCurrentSeason(league, env);
-  if (!currentSeason) return { error: "Nessun match disputato per questa lega." };
-
-  const matches = await env.DB_ARCHIVIO.prepare(`
-    SELECT 
-      ht.name as hometeam,
-      at.name as awayteam,
-      m.fthg,
-      m.ftag,
-      m.ftr
-    FROM matches m
-    JOIN teams ht ON m.home_team_id = ht.id
-    JOIN teams at ON m.away_team_id = at.id
-    WHERE m.div = ? AND m.season = ?
-  `).bind(league, currentSeason).all();
-
-  const activeTeamsRes = await env.DB_ARCHIVIO.prepare(`
-    SELECT DISTINCT ht.name as team_name
-    FROM matches m
-    JOIN teams ht ON m.home_team_id = ht.id
-    WHERE m.div = ? AND m.season = ?
-    UNION
-    SELECT DISTINCT at.name as team_name
-    FROM matches m
-    JOIN teams at ON m.away_team_id = at.id
-    WHERE m.div = ? AND m.season = ?
-  `).bind(league, currentSeason, league, currentSeason).all();
-
-  const activeTeamNames = new Set(activeTeamsRes.results.map(r => sanitizeTeamName(r.team_name)));
-
-  // Lettura da classifica_elite
-  const teamRows = await env.DB_ARCHIVIO.prepare(`
-    SELECT nome_display AS team_name, elo_raw AS elo, attacco AS alpha, difesa AS beta, h_factor 
-    FROM classifica_elite 
-    WHERE ultima_div = ?
-  `).bind(league).all();
-
-  const seen = new Set();
-  const filteredTeams = [];
-  teamRows.results.forEach(t => {
-    const norm = sanitizeTeamName(t.team_name);
-    if (activeTeamNames.has(norm) && !seen.has(norm)) {
-      seen.add(norm);
-      filteredTeams.push(t);
-    }
-  });
-
-  const teamMap = new Map();
-  filteredTeams.forEach(t => teamMap.set(sanitizeTeamName(t.team_name), t));
-
-  const calibration = await env.DB_PRONOSTICI.prepare(
-    "SELECT current_rho FROM parametri_campionato WHERE campionato = ?"
-  ).bind(league).first();
-  const rho = calibration?.current_rho || 0;
-
-  const table = {};
-  filteredTeams.forEach(t => {
-    const key = sanitizeTeamName(t.team_name);
-    const cleanName = t.team_name;
-    const createSub = () => ({ played: 0, wins: 0, draws: 0, losses: 0, gf: 0, gs: 0, points: 0, expectedPoints: 0, xgf: 0, xgs: 0, diff: 0 });
-    table[key] = { team: cleanName, tot: createSub(), home: createSub(), away: createSub() };
-  });
-
-  matches.results.forEach(m => {
-    const homeKey = sanitizeTeamName(m.hometeam);
-    const awayKey = sanitizeTeamName(m.awayteam);
-
-    const home = teamMap.get(homeKey);
-    const away = teamMap.get(awayKey);
-    if (!home || !away) return;
-
-    const eloDiff = home.elo_raw - away.elo_raw;
-    const eloScale = 1 + eloDiff * 0.0002;
-    const lambda = Math.max(0.05, home.attacco * away.difesa * (home.h_factor || 1.15) * eloScale);
-    const mu = Math.max(0.05, (away.attacco * home.difesa) / eloScale);
-
-    let pWin = 0, pDraw = 0, pLoss = 0;
-    const maxG = 5;
-    const pHG = new Array(maxG + 1).fill(0).map((_, i) => (Math.pow(lambda, i) * Math.exp(-lambda)) / factorial(i));
-    const pAG = new Array(maxG + 1).fill(0).map((_, i) => (Math.pow(mu, i) * Math.exp(-mu)) / factorial(i));
-
-    for (let h = 0; h <= maxG; h++) {
-      for (let a = 0; a <= maxG; a++) {
-        let prob = pHG[h] * pAG[a];
-        if (h <= 1 && a <= 1) prob *= getDixonColesTau(h, a, lambda, mu, rho);
-        if (h > a) pWin += prob;
-        else if (h === a) pDraw += prob;
-        else pLoss += prob;
-      }
-    }
-
-    const sum = pWin + pDraw + pLoss;
-    pWin /= sum; pDraw /= sum; pLoss /= sum;
-
-    const xPtsHome = pWin * 3 + pDraw * 1;
-    const xPtsAway = pLoss * 3 + pDraw * 1;
-
-    const h = table[homeKey];
-    const a = table[awayKey];
-
-    // Aggiornamento Totale
-    h.tot.played++; a.tot.played++;
-    h.tot.gf += m.fthg; h.tot.gs += m.ftag;
-    a.tot.gf += m.ftag; a.tot.gs += m.fthg;
-    h.tot.expectedPoints += xPtsHome; a.tot.expectedPoints += xPtsAway;
-    h.tot.xgf += lambda; h.tot.xgs += mu;
-    a.tot.xgf += mu; a.tot.xgs += lambda;
-
-    // Aggiornamento Casa
-    h.home.played++;
-    h.home.gf += m.fthg; h.home.gs += m.ftag;
-    h.home.expectedPoints += xPtsHome;
-    h.home.xgf += lambda; h.home.xgs += mu;
-
-    // Aggiornamento Trasferta
-    a.away.played++;
-    a.away.gf += m.ftag; a.away.gs += m.fthg;
-    a.away.expectedPoints += xPtsAway;
-    a.away.xgf += mu; a.away.xgs += lambda;
-
-    if (m.ftr === "H") {
-      h.tot.wins++; h.tot.points += 3; h.home.wins++; h.home.points += 3;
-      a.tot.losses++; a.away.losses++;
-    } else if (m.ftr === "A") {
-      a.tot.wins++; a.tot.points += 3; a.away.wins++; a.away.points += 3;
-      h.tot.losses++; h.home.losses++;
-    } else {
-      h.tot.draws++; h.tot.points += 1; h.home.draws++; h.home.points += 1;
-      a.tot.draws++; a.tot.points += 1; a.away.draws++; a.away.points += 1;
-    }
-  });
-
-  Object.keys(table).forEach(k => {
-    const t = table[k];
-    const adjust = (obj) => {
-      obj.expectedPoints = Number(obj.expectedPoints.toFixed(2));
-      obj.xgf = Number(obj.xgf.toFixed(1));
-      obj.xgs = Number(obj.xgs.toFixed(1));
-      obj.diff = Number((obj.points - obj.expectedPoints).toFixed(2));
-    };
-    adjust(t.tot); adjust(t.home); adjust(t.away);
-  });
-
-  return Object.values(table);
-}
-
-function factorial(n) {
-  if (n === 0 || n === 1) return 1;
-  let r = 1;
-  for (let i = 2; i <= n; i++) r *= i;
-  return r;
-}
-
-// --- CORE ENGINE 3: INDICE DI SORPRESA (La Mappa del Caos) ---
-
-async function calculateChaosMap(env) {
-  const activeLeaguesRes = await env.DB_ARCHIVIO.prepare(`
-    SELECT DISTINCT rl.div, rl.nazione, rl.descrizione 
-    FROM regole_leghe rl
-    JOIN classifica_elite ce ON rl.div = ce.ultima_div
-  `).all();
-
-  const result = [];
-
-  for (const league of activeLeaguesRes.results) {
-    const currentSeason = await getCurrentSeason(league.div, env);
-    if (!currentSeason) continue;
-
-    const matches = await env.DB_ARCHIVIO.prepare(`
-      SELECT 
-        ht.name as hometeam,
-        at.name as awayteam,
-        m.fthg,
-        m.ftag,
-        m.ftr
-      FROM matches m
-      JOIN teams ht ON m.home_team_id = ht.id
-      JOIN teams at ON m.away_team_id = at.id
-      WHERE m.div = ? AND m.season = ?
-    `).bind(league.div, currentSeason).all();
-
-    if (matches.results.length < 15) continue;
-
-    const teamRows = await env.DB_ARCHIVIO.prepare(`
-      SELECT nome_display AS team_name, elo_raw AS elo, attacco AS alpha, difesa AS beta, h_factor 
-      FROM classifica_elite 
-      WHERE ultima_div = ?
-    `).bind(league.div).all();
-
-    const teamMap = new Map();
-    teamRows.results.forEach(t => teamMap.set(sanitizeTeamName(t.team_name), t));
-
-    let totalShock = 0;
-    let count = 0;
-    let maxShockVal = 0;
-    let shockingMatch = { home: "-", away: "-", score: "-", prob: 0 };
-    const upsetTracker = {};
-
-    matches.results.forEach(m => {
-      const homeKey = sanitizeTeamName(m.hometeam);
-      const awayKey = sanitizeTeamName(m.awayteam);
-
-      const home = teamMap.get(homeKey);
-      const away = teamMap.get(awayKey);
-      if (!home || !away) return;
-
-      const eloDiff = home.elo - away.elo;
-      const eloScale = 1 + eloDiff * 0.0002;
-      const lambda = home.alpha * away.beta * (home.h_factor || 1.15) * eloScale;
-      const mu = (away.alpha * home.beta) / eloScale;
-
-      const sumG = lambda + mu;
-      const pWin = lambda / (sumG || 1);
-      const pLoss = mu / (sumG || 1);
-      const pDraw = 0.26;
-
-      let pOutcome = pDraw;
-      if (m.ftr === "H") pOutcome = pWin * (1 - pDraw);
-      if (m.ftr === "A") pOutcome = pLoss * (1 - pDraw);
-
-      const shock = 1 - pOutcome;
-      totalShock += shock;
-      count++;
-
-      if (shock > maxShockVal) {
-        maxShockVal = shock;
-        shockingMatch = {
-          home: home.team_name,
-          away: away.team_name,
-          score: `${m.fthg}-${m.ftag}`,
-          prob: Number((pOutcome * 100).toFixed(1))
-        };
-      }
-
-      if (shock > 0.70) {
-        const victor = m.ftr === "H" ? home.team_name : (m.ftr === "A" ? away.team_name : null);
-        if (victor) {
-          upsetTracker[victor] = (upsetTracker[victor] || 0) + shock;
-        }
-      }
-    });
-
-    let bracketBuster = "Nessuno";
-    let maxUpsetScore = 0;
-    Object.keys(upsetTracker).forEach(team => {
-      if (upsetTracker[team] > maxUpsetScore) {
-        maxUpsetScore = upsetTracker[team];
-        bracketBuster = team;
-      }
-    });
-
-    if (count > 0) {
-      result.push({
-        league: league.div,
-        nazione: league.nazione || "",
-        descrizione: league.descrizione || "",
-        chaos_index: Number((totalShock / count * 100).toFixed(1)),
-        matches_analyzed: count,
-        most_shocking_match: shockingMatch,
-        bracket_buster: bracketBuster
-      });
-    }
-  }
-
-  return result.sort((a, b) => b.chaos_index - a.chaos_index);
-}
-
-// --- CORE ENGINE 4: INDICE DI FORMA REALE (PONDERATO TEMPORALMENTE) ---
-
-async function calculateRealForm(league, env) {
-  const currentSeason = await getCurrentSeason(league, env);
-  if (!currentSeason) return { error: "Stagione non trovata." };
-
-  const teamRows = await env.DB_ARCHIVIO.prepare(`
-    SELECT nome_display AS team_name, elo_raw AS elo, attacco AS alpha, difesa AS beta, h_factor 
-    FROM classifica_elite 
-    WHERE ultima_div = ?
-  `).bind(league).all();
-
-  const teamMap = new Map();
-  const formTable = {};
-  teamRows.results.forEach(t => {
-    const key = sanitizeTeamName(t.team_name);
-    teamMap.set(key, t);
-    formTable[key] = { team: t.team_name, matches: [] };
-  });
-
-  const matches = await env.DB_ARCHIVIO.prepare(`
-    SELECT 
-      ht.name as hometeam,
-      at.name as awayteam,
-      m.fthg,
-      m.ftag
-    FROM matches m
-    JOIN teams ht ON m.home_team_id = ht.id
-    JOIN teams at ON m.away_team_id = at.id
-    WHERE m.div = ? AND m.season = ?
-    ORDER BY m.date DESC
-  `).bind(league, currentSeason).all();
-
-  matches.results.forEach(m => {
-    const homeKey = sanitizeTeamName(m.hometeam);
-    const awayKey = sanitizeTeamName(m.awayteam);
-
-    const home = teamMap.get(homeKey);
-    const away = teamMap.get(awayKey);
-    if (!home || !away) return;
-
-    const hForm = formTable[homeKey];
-    const aForm = formTable[awayKey];
-
-    const eloDiff = home.elo - away.elo;
-    const eloScale = 1 + eloDiff * 0.0002;
-    const lambda = home.alpha * away.beta * (home.h_factor || 1.15) * eloScale;
-    const mu = (away.alpha * home.beta) / eloScale;
-
-    if (hForm.matches.length < 5) {
-      hForm.matches.push({
-        actualScored: m.fthg,
-        expectedScored: lambda,
-        actualConceded: m.ftag,
-        expectedConceded: mu
-      });
-    }
-
-    if (aForm.matches.length < 5) {
-      aForm.matches.push({
-        actualScored: m.ftag,
-        expectedScored: mu,
-        actualConceded: m.fthg,
-        expectedConceded: lambda
-      });
-    }
-  });
-
-  const weights = [0.35, 0.25, 0.20, 0.12, 0.08];
-
-  return Object.values(formTable).filter(t => t.matches.length > 0).map(t => {
-    let weightedAtt = 0;
-    let weightedDif = 0;
-    let weightSum = 0;
-
-    t.matches.forEach((m, idx) => {
-      const w = weights[idx] || 0;
-      weightedAtt += (m.actualScored - m.expectedScored) * w;
-      weightedDif += (m.expectedConceded - m.actualConceded) * w;
-      weightSum += w;
-    });
-
-    const attRating = weightSum > 0 ? (weightedAtt / weightSum) : 0;
-    const difRating = weightSum > 0 ? (weightedDif / weightSum) : 0;
-
-    const sumActualScored = t.matches.reduce((acc, curr) => acc + curr.actualScored, 0);
-    const sumExpectedScored = t.matches.reduce((acc, curr) => acc + curr.expectedScored, 0);
-    const sumActualConceded = t.matches.reduce((acc, curr) => acc + curr.actualConceded, 0);
-    const sumExpectedConceded = t.matches.reduce((acc, curr) => acc + curr.expectedConceded, 0);
-
-    return {
-      team: t.team,
-      partiteG: t.matches.length,
-      actualGoalsScored: sumActualScored,
-      expectedGoalsScored: Number(sumExpectedScored.toFixed(1)),
-      ratingFormaAttacco: Number(attRating.toFixed(2)),
-      actualGoalsConceded: sumActualConceded,
-      expectedGoalsConceded: Number(sumExpectedConceded.toFixed(1)),
-      ratingFormaDifesa: Number(difRating.toFixed(2))
-    };
-  }).sort((a, b) => b.ratingFormaAttacco - a.ratingFormaAttacco);
-}
-
-// --- ROTAZIONE SCHEDULATA DAEMON ---
-
-async function handleScheduledSimulation(env) {
-  const targetLeague = await env.DB_PRONOSTICI.prepare(`
-    SELECT campionato FROM parametri_campionato 
-    WHERE is_completed = 0 
-    ORDER BY last_update ASC LIMIT 1
-  `).first();
-
-  if (targetLeague) {
-    await runMonteCarloSimulation(targetLeague.campionato, 10000, env);
-    const nowTimestamp = new Date().toISOString();
-    await env.DB_PRONOSTICI.prepare(`
-      UPDATE parametri_campionato SET last_update = ? WHERE campionato = ?
-    `).bind(nowTimestamp, targetLeague.campionato).run();
-  }
-}
-
-// --- INTERFACCIA: DASHBOARD HTML CON TAILWIND & PROFILI COMPATTI ---
-
-const HTML_DASHBOARD = `
-<!DOCTYPE html>
-<html lang="it">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>GOLDBET SIMULATOR</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 0; background: #000; color: #d4d4d8; }
-    .text-cyan-neon { color: #22d3ee; }
-    .bg-zinc-dark { background: #09090b; }
-    .border-zinc-dark { border: 1px solid #27272a; }
-
-    /* Forzatura Scrollbar Invisibili ma Funzionanti */
-    .no-scrollbar::-webkit-scrollbar { display: none; }
-    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-    /* Sticky per la colonna sinistra (Squadra) */
-    .sticky-col {
-      position: sticky;
-      left: 0;
-      background: #000000;
-      z-index: 10;
-      border-right: 1px solid #27272a;
-    }
-    
-    th.sticky-col {
-      background: #09090b;
-    }
-  </style>
-</head>
-<body class="bg-black text-zinc-300 font-sans">
-
-  <!-- HEADER ELITE -->
-  <header class="flex justify-between items-center p-5 bg-black border-b border-zinc-800 sticky top-0 z-50">
-    <h1 class="text-2xl font-black italic tracking-tighter text-white flex items-center select-none">
-      GOLDBET <span class="text-cyan-400 not-italic ml-1">SIMULATOR</span>
-      <div class="h-2 w-2 rounded-full bg-cyan-500 animate-pulse ml-3"></div>
-    </h1>
-    <div class="flex gap-3">
-      <button class="text-white hover:text-cyan-400 transition-all text-xl" onclick="switchTab('chaos')">🛡️</button>
-      <button class="text-white hover:text-cyan-400 transition-all text-xl" onclick="switchTab('projections')">📊</button>
-    </div>
-  </header>
-
-  <!-- BARRA DI NAVIGAZIONE INTERNA (TABS COMPATTE) -->
-  <div class="flex gap-2 p-3 overflow-x-auto no-scrollbar bg-zinc-950 border-b border-zinc-900 sticky top-[73px] z-40">
-    <button class="btn-tab bg-zinc-900 text-zinc-400 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider" onclick="switchTab('chaos')">La Mappa del Caos</button>
-    <button class="btn-tab bg-zinc-900 text-zinc-400 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider" onclick="switchTab('projections')">Monte Carlo</button>
-    <button class="btn-tab bg-zinc-900 text-zinc-400 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider" onclick="switchTab('xpts')">Classifica di Merito</button>
-    <button class="btn-tab bg-zinc-900 text-zinc-400 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider" onclick="switchTab('form')">Forma Reale</button>
-  </div>
-
-  <!-- CONTROL PANEL (SELETTORE E TASTO NITRO) -->
-  <div class="p-3 flex items-center justify-between gap-3 border-b border-zinc-900 bg-black" id="control-bar" style="display: none;">
-    <select id="league-selector" class="bg-zinc-900 border border-zinc-800 text-white rounded p-1.5 text-xs font-bold outline-none flex-grow max-w-xs" onchange="onLeagueChanged()"></select>
-    <button id="nitro-btn" class="bg-amber-500 hover:bg-amber-400 text-black px-3 py-1.5 rounded text-[10px] font-black tracking-wider uppercase transition-all shrink-0" onclick="triggerNitro()">NITRO SIM (10K)</button>
-  </div>
-
-  <!-- SUB-BARRA DI FILTRAGGIO (CLASSIFICA DI MERITO) -->
-  <div class="p-2 flex gap-2 bg-zinc-900 border-b border-zinc-800 justify-center" id="merit-filters" style="display: none;">
-    <button class="btn-filter bg-cyan-400 text-black px-3 py-1 rounded text-[9px] font-black uppercase" id="filter-tot" onclick="changeMeritScope('tot')">TOTALI</button>
-    <button class="btn-filter bg-zinc-950 text-zinc-500 px-3 py-1 rounded text-[9px] font-black uppercase" id="filter-home" onclick="changeMeritScope('home')">CASA</button>
-    <button class="btn-filter bg-zinc-950 text-zinc-500 px-3 py-1 rounded text-[9px] font-black uppercase" id="filter-away" onclick="changeMeritScope('away')">TRASFERTA</button>
-  </div>
-
-  <!-- INFORMAZIONI LEGA ATTIVA -->
-  <div class="px-4 py-2 bg-zinc-950 border-b border-zinc-900 flex justify-between items-center text-[10px] uppercase font-bold text-zinc-500 tracking-wider">
-    <span id="league-info">Caricamento...</span>
-    <span class="text-cyan-400" id="league-code">GLOBAL</span>
-  </div>
-
-  <!-- DASHBOARD PRINCIPALE -->
-  <div class="m-3 overflow-x-auto rounded-lg border border-zinc-800 bg-black no-scrollbar">
-    <table class="w-full border-collapse text-center">
-      <thead id="table-head"></thead>
-      <tbody id="table-body" class="text-xs"></tbody>
-    </table>
-  </div>
-
-  <!-- POP-UP MODALE: GLASSMORPHISM PER LA MAPPA DEL CAOS -->
-  <div id="chaos-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[1000] p-4 hidden">
-    <div class="bg-zinc-950 border border-zinc-800 p-6 rounded-xl max-w-md w-full relative shadow-2xl shadow-cyan-500/10">
-      <span class="absolute top-4 right-4 cursor-pointer text-zinc-500 hover:text-white text-xl select-none" onclick="closeChaosModal()">✖️</span>
-      <h2 id="modal-title" class="text-cyan-400 font-black text-lg mb-4 italic uppercase tracking-wider">REGISTRO SCONVOLGIMENTI</h2>
-      
-      <div class="space-y-4">
-        <div class="bg-zinc-900 p-4 rounded border border-zinc-800">
-          <div class="text-[9px] text-zinc-500 uppercase tracking-widest font-black mb-1">🔥 SHOCK MATCH DELL'ANNO</div>
-          <div class="text-white font-black text-sm uppercase animate-pulse" id="modal-shock-match">-</div>
-          <div class="text-[10px] text-zinc-400 mt-1">Risultato Reale: <span class="font-bold text-white" id="modal-shock-score">-</span></div>
-          <div class="text-[10px] text-cyan-400 mt-0.5">Probabilità di Esito del Modello: <span class="font-bold text-white font-mono" id="modal-shock-prob">0%</span></div>
-        </div>
-
-        <div class="bg-zinc-900 p-4 rounded border border-zinc-800">
-          <div class="text-[9px] text-zinc-500 uppercase tracking-widest font-black mb-1">⚠️ SQUADRA "SFASCIA-PRONOSTICI"</div>
-          <div class="text-amber-400 font-black text-sm uppercase" id="modal-bracket-buster">-</div>
-          <p class="text-[10px] text-zinc-400 mt-1">Questo club genera sistematicamente scostamenti massivi rispetto ai rating attesi, rappresentando l'anomalia tattica principale della lega.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ANIMAZIONE LOADING -->
-  <div id="loading" class="p-12 text-center text-xs font-bold tracking-widest text-zinc-500 uppercase">Dati in elaborazione...</div>
-
-  <!-- NOTIFICA FLOAT TOAST -->
-  <div id="toast" class="fixed bottom-4 left-4 right-4 bg-zinc-950 border border-cyan-500 text-cyan-400 p-3 rounded-lg text-xs font-bold text-center select-none shadow-xl shadow-cyan-500/10 transition-all duration-300 transform translate-y-20 opacity-0 z-[1000]"></div>
-
-  <script>
-    let activeTab = 'chaos';
-    let currentLeague = 'ARG';
-    let leagues = [];
-    let meritData = [];
-    let meritScope = 'tot';
-    let rawChaosData = [];
-
-    async function init() {
-      try {
-        const res = await fetch('/api/leagues');
-        leagues = await res.json();
-        
-        const selector = document.getElementById('league-selector');
-        selector.innerHTML = '';
-        leagues.forEach(l => {
-          const opt = document.createElement('option');
-          opt.value = l.div;
-          const nazioneSafe = (l.nazione || l.div || "").toUpperCase();
-          const descrizioneSafe = (l.descrizione || "").toUpperCase();
-          opt.textContent = \`\${nazioneSafe} - \${descrizioneSafe}\`;
-          selector.appendChild(opt);
-        });
-
-        if (leagues.length > 0) {
-          currentLeague = leagues[0].div;
-          selector.value = currentLeague;
-        }
-
-        switchTab('chaos');
-      } catch (err) {
-        showToast("Errore di caricamento: " + err.message);
-      }
-    }
-
-    function showToast(msg) {
-      const toast = document.getElementById('toast');
-      toast.textContent = msg;
-      toast.className = toast.className.replace("translate-y-20 opacity-0", "translate-y-0 opacity-100");
-      setTimeout(() => {
-        toast.className = toast.className.replace("translate-y-0 opacity-100", "translate-y-20 opacity-0");
-      }, 4000);
-    }
-
-    function switchTab(tab) {
-      activeTab = tab;
-      
-      const buttons = document.querySelectorAll('.btn-tab');
-      const tabNames = ['chaos', 'projections', 'xpts', 'form'];
-      
-      buttons.forEach((btn, idx) => {
-        if (tabNames[idx] === tab) {
-          btn.className = "btn-tab bg-cyan-400 text-black px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider";
-        } else {
-          btn.className = "btn-tab bg-zinc-900 text-zinc-400 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider";
-        }
-      });
-
-      const controlBar = document.getElementById('control-bar');
-      const meritFilters = document.getElementById('merit-filters');
-
-      if (tab === 'chaos') {
-        controlBar.style.display = 'none';
-        meritFilters.style.display = 'none';
-      } else if (tab === 'xpts') {
-        controlBar.style.display = 'flex';
-        meritFilters.style.display = 'flex';
-      } else {
-        controlBar.style.display = 'flex';
-        meritFilters.style.display = 'none';
-      }
-
-      loadData();
-    }
-
-    function onLeagueChanged() {
-      currentLeague = document.getElementById('league-selector').value;
-      loadData();
-    }
-
-    async function triggerNitro() {
-      const btn = document.getElementById('nitro-btn');
-      btn.textContent = 'RUNNING...';
-      btn.className = btn.className.replace("bg-amber-500", "bg-zinc-800 text-zinc-500 cursor-not-allowed");
-      btn.disabled = true;
-      showToast("GOLDBET SIMULATOR avviato (10.000 simulazioni di Monte Carlo)...");
-
-      try {
-        const res = await fetch(\`/api/projections?league=\${currentLeague}&nitro=true\`);
-        const data = await res.json();
-        showToast("Monte Carlo completato e salvato nel database.");
-        if (activeTab === 'projections') {
-          renderProjections(data.results);
-        }
-      } catch (err) {
-        showToast("Errore di simulazione: " + err.message);
-      } finally {
-        btn.textContent = 'NITRO SIM (10K)';
-        btn.className = btn.className.replace("bg-zinc-800 text-zinc-500 cursor-not-allowed", "bg-amber-500 text-black");
-        btn.disabled = false;
-      }
-    }
-
-    async function loadData() {
-      const loading = document.getElementById('loading');
-      const tbody = document.getElementById('table-body');
-      const thead = document.getElementById('table-head');
-      
-      loading.style.display = 'block';
-      tbody.innerHTML = '';
-      thead.innerHTML = '';
-
-      const leagueInfo = document.getElementById('league-info');
-      const leagueCode = document.getElementById('league-code');
-      const matched = leagues.find(l => l.div === currentLeague);
-
-      if (activeTab === 'chaos') {
-        leagueInfo.textContent = 'MAPPA GLOBALE DEL DISORDINE';
-        leagueCode.textContent = 'GLOBAL';
-      } else {
-        const descrizioneSafe = matched ? (matched.descrizione || "").toUpperCase() : currentLeague;
-        leagueInfo.textContent = descrizioneSafe;
-        leagueCode.textContent = currentLeague;
-      }
-
-      try {
-        if (activeTab === 'chaos') {
-          const res = await fetch('/api/chaos-map');
-          rawChaosData = await res.json();
-          renderChaosMap(rawChaosData);
-        } else if (activeTab === 'projections') {
-          const res = await fetch(\`/api/projections?league=\${currentLeague}\`);
-          const data = await res.json();
-          renderProjections(data.results || []);
-        } else if (activeTab === 'xpts') {
-          const res = await fetch(\`/api/expected-points?league=\${currentLeague}\`);
-          meritData = await res.json();
-          renderExpectedPoints();
-        } else if (activeTab === 'form') {
-          const res = await fetch(\`/api/real-form?league=\${currentLeague}\`);
-          const data = await res.json();
-          renderRealForm(data);
-        }
-        loading.style.display = 'none';
-      } catch (err) {
-        loading.style.display = 'none';
-        showToast("Errore nel caricamento dei dati: " + err.message);
-      }
-    }
-
-    function changeMeritScope(scope) {
-      meritScope = scope;
-      document.querySelectorAll('.btn-filter').forEach(btn => {
-        btn.className = "btn-filter bg-zinc-950 text-zinc-500 px-3 py-1 rounded text-[9px] font-black uppercase";
-      });
-      document.getElementById(\`filter-\${scope}\`).className = "btn-filter bg-cyan-400 text-black px-3 py-1 rounded text-[9px] font-black uppercase";
-      renderExpectedPoints();
-    }
-
-    function openChaosModal(league) {
-      const item = rawChaosData.find(d => d.league === league);
-      if (!item) return;
-
-      const descrizioneSafe = (item.descrizione || "").toUpperCase();
-      document.getElementById('modal-title').textContent = \`Dati Caos - \${descrizioneSafe}\`;
-      
-      const mMatch = item.most_shocking_match;
-      document.getElementById('modal-shock-match').textContent = \`\${mMatch.home} vs \${mMatch.away}\`;
-      document.getElementById('modal-shock-score').textContent = mMatch.score;
-      document.getElementById('modal-shock-prob').textContent = \`\${mMatch.prob}%\`;
-
-      document.getElementById('modal-bracket-buster').textContent = item.bracket_buster;
-
-      document.getElementById('chaos-modal').classList.remove('hidden');
-    }
-
-    function closeChaosModal() {
-      document.getElementById('chaos-modal').classList.add('hidden');
-    }
-
-    // --- RENDERING TABELLE CON INTESTAZIONI A DUE LIVELLI (BUG 3 RISOLTO) ---
-
-    function renderChaosMap(data) {
-      const thead = document.getElementById('table-head');
-      const tbody = document.getElementById('table-body');
-
-      thead.innerHTML = \`
-        <tr class="bg-zinc-900 text-cyan-400 text-[10px] font-black border-b border-zinc-700">
-          <th colspan="3" class="p-1 border-r border-zinc-800 text-left sticky-col">REGISTRI DI ANALISI GENERALI</th>
-          <th colspan="1" class="p-1">METRICHE</th>
-        </tr>
-        <tr class="bg-zinc-950 text-zinc-500 text-[9px] uppercase tracking-widest border-b border-zinc-800">
-          <th class="p-1 text-left sticky-col">LEGA</th>
-          <th class="p-1 text-left">NAZIONE</th>
-          <th class="p-1 text-left border-r border-zinc-800">DESCRIZIONE</th>
-          <th class="p-1">CAOS INDEX</th>
-        </tr>
-      \`;
-
-      if (!data || data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-zinc-500">Nessun dato di caos disponibile.</td></tr>';
-        return;
-      }
-
-      data.forEach(item => {
-        let chaosColor = 'text-green-500';
-        if (item.chaos_index > 70) chaosColor = 'text-red-500';
-        else if (item.chaos_index > 55) chaosColor = 'text-amber-500';
-
-        const nazioneSafe = (item.nazione || "").toUpperCase();
-        const descrizioneSafe = (item.descrizione || "").toUpperCase();
-
-        tbody.innerHTML += \`
-          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40 cursor-pointer text-[10.5px]" onclick="openChaosModal('\${item.league}')">
-            <td class="p-1.5 text-left font-black text-white uppercase sticky-col">\${item.league}</td>
-            <td class="p-1.5 text-left text-zinc-400 font-bold">\ \${nazioneSafe}</td>
-            <td class="p-1.5 text-left text-zinc-400 border-r border-zinc-900 text-ellipsis overflow-hidden whitespace-nowrap">\${descrizioneSafe}</td>
-            <td class="p-1.5 font-bold \${chaosColor} font-mono">\${item.chaos_index}%</td>
-          </tr>
-        \`;
-      });
-    }
-
-    function renderProjections(data) {
-      const thead = document.getElementById('table-head');
-      const tbody = document.getElementById('table-body');
-
-      thead.innerHTML = \`
-        <tr class="bg-zinc-900 text-cyan-400 text-[10px] font-black border-b border-zinc-700">
-          <th colspan="2" class="p-1 border-r border-zinc-800 text-left sticky-col">PROIEZIONE STANDARD</th>
-          <th colspan="4" class="p-1 border-r border-zinc-800">PIAZZAMENTI COPA</th>
-          <th colspan="4" class="p-1">COMPETIZIONI DI LEGA</th>
-        </tr>
-        <tr class="bg-zinc-950 text-zinc-500 text-[9px] uppercase tracking-widest border-b border-zinc-800">
-          <th class="p-1 text-left sticky-col">SQUADRA</th>
-          <th class="p-1 border-r border-zinc-800">xPTS PROG</th>
-          <th class="p-1">🏆</th>
-          <th class="p-1">CHL</th>
-          <th class="p-1">UEL</th>
-          <th class="p-1 border-r border-zinc-800">UECL</th>
-          <th class="p-1">PROM.</th>
-          <th class="p-1">P.OFF</th>
-          <th class="p-1">P.OUT</th>
-          <th class="p-1">🔴</th>
-        </tr>
-      \`;
-
-      if (!data || data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="p-4 text-center text-zinc-500">Dati assenti. Usa NITRO SIM per avviare.</td></tr>';
-        return;
-      }
-
-      data.forEach(item => {
-        tbody.innerHTML += \`
-          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40 text-[10.5px]">
-            <td class="p-1.5 text-left font-black text-white uppercase sticky-col">\${item.squadra}</td>
-            <td class="p-1.5 font-black text-cyan-400 border-r border-zinc-900 font-mono">\${item.xpts_mediana.toFixed(1)}</td>
-            <td class="p-1.5 font-bold \${item.scudetto_prob > 50 ? 'text-amber-400' : 'text-zinc-600'} font-mono">\${item.scudetto_prob.toFixed(1)}%</td>
-            <td class="p-1.5 font-bold \${item.ucl_prob > 50 ? 'text-cyan-400' : 'text-zinc-600'} font-mono">\${item.ucl_prob.toFixed(1)}%</td>
-            <td class="p-1.5 font-bold \${item.uel_prob > 50 ? 'text-orange-400' : 'text-zinc-600'} font-mono">\${item.uel_prob.toFixed(1)}%</td>
-            <td class="p-1.5 font-bold border-r border-zinc-900 \${item.uecl_prob > 50 ? 'text-emerald-400' : 'text-zinc-600'} font-mono">\${item.uecl_prob.toFixed(1)}%</td>
-            <td class="p-1.5 font-bold \${item.promo_prob > 50 ? 'text-emerald-400' : 'text-zinc-600'} font-mono">\${item.promo_prob.toFixed(1)}%</td>
-            <td class="p-1.5 font-bold \${item.playoff_prob > 50 ? 'text-purple-400' : 'text-zinc-600'} font-mono">\${item.playoff_prob.toFixed(1)}%</td>
-            <td class="p-1.5 font-bold \${item.playout_prob > 50 ? 'text-purple-400' : 'text-zinc-600'} font-mono">\${item.playout_prob.toFixed(1)}%</td>
-            <td class="p-1.5 font-bold \${item.retro_prob > 50 ? 'text-red-500' : 'text-zinc-600'} font-mono">\${item.retro_prob.toFixed(1)}%</td>
-          </tr>
-        \`;
-      });
-    }
-
-    function renderExpectedPoints() {
-      const thead = document.getElementById('table-head');
-      const tbody = document.getElementById('table-body');
-
-      thead.innerHTML = \`
-        <tr class="bg-zinc-900 text-cyan-400 text-[10px] font-black border-b border-zinc-700">
-          <th colspan="7" class="p-1 border-r border-zinc-800 text-left sticky-col">CLASSIFICA REALE STATISTICHE</th>
-          <th colspan="4" class="p-1">VALORI ATTESI E DIFFERENZE</th>
-        </tr>
-        <tr class="bg-zinc-950 text-zinc-500 text-[9px] uppercase tracking-widest border-b border-zinc-800">
-          <th class="p-1 text-left sticky-col">SQUADRA</th>
-          <th class="p-1">PT</th>
-          <th class="p-1">V</th>
-          <th class="p-1">N</th>
-          <th class="p-1">S</th>
-          <th class="p-1">GF</th>
-          <th class="p-1 border-r border-zinc-800">GS</th>
-          <th class="p-1">xPT</th>
-          <th class="p-1">xGF</th>
-          <th class="p-1">xGS</th>
-          <th class="p-1">DIFF</th>
-        </tr>
-      \`;
-
-      if (!meritData || meritData.length === 0 || meritData.error) {
-        tbody.innerHTML = \`<tr><td colspan="11" class="p-4 text-center text-zinc-500">\ \${meritData?.error || 'Dati non disponibili.'}</td></tr>\`;
-        return;
-      }
-
-      const formatted = meritData.map(item => {
-        const block = item[meritScope];
-        return {
-          team: item.team,
-          points: block.points,
-          wins: block.wins,
-          draws: block.draws,
-          losses: block.losses,
-          gf: block.gf,
-          gs: block.gs,
-          xpt: block.expectedPoints,
-          xgf: block.xgf,
-          xgs: block.xgs,
-          diff: block.diff
-        };
-      }).sort((a, b) => b.xpt - a.xpt);
-
-      formatted.forEach(item => {
-        const isOverperforming = item.diff > 0;
-        const diffClass = isOverperforming ? 'text-red-500' : (item.diff < 0 ? 'text-green-500' : 'text-zinc-500');
-        const sign = isOverperforming ? '+' : '';
-
-        tbody.innerHTML += \`
-          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40 text-[10.5px]">
-            <td class="p-1.5 text-left font-black text-white uppercase sticky-col">\${item.team}</td>
-            <td class="p-1.5 text-white font-black font-mono">\${item.points}</td>
-            <td class="p-1.5 text-zinc-400 font-mono">\${item.wins}</td>
-            <td class="p-1.5 text-zinc-400 font-mono">\${item.draws}</td>
-            <td class="p-1.5 text-zinc-400 font-mono">\${item.losses}</td>
-            <td class="p-1.5 text-zinc-400 font-mono">\${item.gf}</td>
-            <td class="p-1.5 text-zinc-400 border-r border-zinc-900 font-mono">\${item.gs}</td>
-            <td class="p-1.5 text-cyan-400 font-black font-mono">\${item.xpt.toFixed(2)}</td>
-            <td class="p-1.5 text-zinc-500 font-mono">\${item.xgf.toFixed(1)}</td>
-            <td class="p-1.5 text-zinc-500 font-mono">\${item.xgs.toFixed(1)}</td>
-            <td class="p-1.5 font-black font-mono \${diffClass}">\${sign}\${item.diff.toFixed(2)}</td>
-          </tr>
-        \`;
-      });
-    }
-
-    function renderRealForm(data) {
-      const thead = document.getElementById('table-head');
-      const tbody = document.getElementById('table-body');
-
-      thead.innerHTML = \`
-        <tr class="bg-zinc-900 text-cyan-400 text-[10px] font-black border-b border-zinc-700">
-          <th colspan="2" class="p-1 border-r border-zinc-800 text-left sticky-col">DATI GENERALI</th>
-          <th colspan="3" class="p-1 border-r border-zinc-800">REPARTO ATTACCO (xG - PESATO)</th>
-          <th colspan="3" class="p-1">REPARTO DIFESA (xGA - PESATO)</th>
-        </tr>
-        <tr class="bg-zinc-950 text-zinc-500 text-[9px] uppercase tracking-widest border-b border-zinc-800">
-          <th class="p-1 text-left sticky-col">SQUADRA</th>
-          <th class="p-1 border-r border-zinc-800">PG</th>
-          <th class="p-1">REALI</th>
-          <th class="p-1">ATTESI</th>
-          <th class="p-1 border-r border-zinc-800">RATING FORM</th>
-          <th class="p-1">REALI</th>
-          <th class="p-1">ATTESI</th>
-          <th class="p-1">RATING FORM</th>
-        </tr>
-      \`;
-
-      if (!data || data.length === 0 || data.error) {
-        tbody.innerHTML = \`<tr><td colspan="8" class="p-4 text-center text-zinc-500">\${data?.error || 'Dati non calcolabili.'}</td></tr>\`;
-        return;
-      }
-
-      data.forEach(item => {
-        const attClass = item.ratingFormaAttacco > 0 ? 'text-green-500' : (item.ratingFormaAttacco < 0 ? 'text-red-500' : 'text-zinc-500');
-        const difClass = item.ratingFormaDifesa > 0 ? 'text-green-500' : (item.ratingFormaDifesa < 0 ? 'text-red-500' : 'text-zinc-500');
-
-        tbody.innerHTML += \`
-          <tr class="border-b border-zinc-900 hover:bg-zinc-900/40 text-[10.5px]">
-            <td class="p-1.5 text-left font-black text-white uppercase sticky-col">\${item.team}</td>
-            <td class="p-1.5 text-zinc-400 border-r border-zinc-900 font-mono font-bold">\${item.partiteG}</td>
-            <td class="p-1.5 text-zinc-300 font-mono">\ \${item.actualGoalsScored}</td>
-            <td class="p-1.5 text-zinc-500 font-mono font-bold">\${item.expectedGoalsScored.toFixed(1)}</td>
-            <td class="p-1.5 font-black border-r border-zinc-900 font-mono \${attClass}">\${item.ratingFormaAttacco > 0 ? '+' : ''}\${item.ratingFormaAttacco.toFixed(2)}</td>
-            <td class="p-1.5 text-zinc-300 font-mono">\${item.actualGoalsConceded}</td>
-            <td class="p-1.5 text-zinc-500 font-mono font-bold">\${item.expectedGoalsConceded.toFixed(1)}</td>
-            <td class="p-1.5 font-black font-mono \${difClass}">\${item.ratingFormaDifesa > 0 ? '+' : ''}\${item.ratingFormaDifesa.toFixed(2)}</td>
-          </tr>
-        \`;
-      });
-    }
-
-    window.onload = init;
-  </script>
-</body>
-</html>
-`;
