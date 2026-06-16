@@ -4,9 +4,10 @@ export default {
     const dbArchivio = env.DB_ARCHIVIO;
     const dbSoglie = env.DB_SOGLIE;
     
+    // SISTEMA DI CONTROLLO DELLA CHIAVE API CON LA TUA NUOVA CHIAVE
     let apiKey = env.API_FOOTBALL_KEY;
     if (!apiKey || apiKey === "undefined" || apiKey.trim() === "") {
-      apiKey = "10f28027ede24679b3c8d4b9cfc8948e";
+      apiKey = "a045158f354f22a763d193b99f52ae48";
     }
 
     // 1. ROTTA PRINCIPALE (DASHBOARD)
@@ -51,7 +52,7 @@ export default {
         
         if (syncStatus === "running") {
           html += "<button class='btn' disabled>Sincronizzazione in corso...</button>";
-          html += "<p class='status-running'>Sincronizzazione rallentata (6.5s per chiamata) per rispettare il piano gratuito di API-Football. Ricarica questa pagina tra 1 o 2 minuti.</p>";
+          html += "<p class='status-running'>Sincronizzazione attiva in background (6.5s per chiamata) per rispettare i limiti API. Ricarica questa pagina tra 1 o 2 minuti.</p>";
         } else {
           html += "<form action='/sync' method='POST'>";
           html += "<button type='submit' class='btn'>Avvia Sincronizzazione Ora</button>";
@@ -76,7 +77,7 @@ export default {
       }
     }
 
-    // 2. ROTTA POST /sync
+    // 2. ROTTA POST /sync (AVVIO DELLA CODA IN BACKGROUND)
     if (url.pathname === "/sync" && request.method === "POST") {
       try {
         const statusCheck = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
@@ -121,7 +122,6 @@ async function runBackgroundSync(dbArchivio, dbSoglie, apiKey) {
     let lastRemaining = "100";
     const stagioneCorrente = "2024";
 
-    // Modificato a 6500ms (6.5 secondi) per garantire max 9 richieste al minuto
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     for (let i = 0; i < leghe.results.length; i++) {
@@ -191,7 +191,7 @@ async function runBackgroundSync(dbArchivio, dbSoglie, apiKey) {
         }
       }
 
-      // PAUSA DI SICUREZZA DI 6.5 SECONDI
+      // Ritardo protettivo di 6.5 secondi per non superare le 10 chiamate/minuto
       if (i < leghe.results.length - 1) {
         await delay(6500); 
       }
