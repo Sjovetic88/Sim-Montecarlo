@@ -4,8 +4,6 @@ export default {
     const dbArchivio = env.DB_ARCHIVIO;
     const dbSoglie = env.DB_SOGLIE;
     
-    // SISTEMA DI CONTROLLO BLINDATO DELLA CHIAVE API
-    // Se la variabile di Cloudflare è vuota o scritta come stringa "undefined", forziamo la tua chiave reale
     let apiKey = env.API_FOOTBALL_KEY;
     if (!apiKey || apiKey === "undefined" || apiKey.trim() === "") {
       apiKey = "10f28027ede24679b3c8d4b9cfc8948e";
@@ -53,7 +51,7 @@ export default {
         
         if (syncStatus === "running") {
           html += "<button class='btn' disabled>Sincronizzazione in corso...</button>";
-          html += "<p class='status-running'>La sincronizzazione è attiva in background. Ricarica la pagina tra 30 secondi per vedere i risultati.</p>";
+          html += "<p class='status-running'>Sincronizzazione rallentata (6.5s per chiamata) per rispettare il piano gratuito di API-Football. Ricarica questa pagina tra 1 o 2 minuti.</p>";
         } else {
           html += "<form action='/sync' method='POST'>";
           html += "<button type='submit' class='btn'>Avvia Sincronizzazione Ora</button>";
@@ -78,7 +76,7 @@ export default {
       }
     }
 
-    // 2. ROTTA POST /sync (AVVIO DELLA CODA IN BACKGROUND)
+    // 2. ROTTA POST /sync
     if (url.pathname === "/sync" && request.method === "POST") {
       try {
         const statusCheck = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
@@ -90,9 +88,6 @@ export default {
           dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'running')"),
           dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', NULL)")
         ]);
-
-        // Stampiamo un log di controllo per verificare quale chiave stiamo caricando
-        console.log("Inizio sincronizzazione. Chiave utilizzata (prime 4 lettere): " + apiKey.substring(0, 4));
 
         ctx.waitUntil(
           runBackgroundSync(dbArchivio, dbSoglie, apiKey)
@@ -112,7 +107,7 @@ export default {
   }
 };
 
-// FUNZIONE IN BACKGROUND
+// FUNZIONE IN BACKGROUND CON ANTI RATE-LIMIT (6.5 secondi di pausa)
 async function runBackgroundSync(dbArchivio, dbSoglie, apiKey) {
   try {
     const leghe = await dbArchivio.prepare("SELECT div, api_id FROM regole_leghe WHERE api_id > 0").all();
@@ -126,6 +121,7 @@ async function runBackgroundSync(dbArchivio, dbSoglie, apiKey) {
     let lastRemaining = "100";
     const stagioneCorrente = "2024";
 
+    // Modificato a 6500ms (6.5 secondi) per garantire max 9 richieste al minuto
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     for (let i = 0; i < leghe.results.length; i++) {
@@ -133,7 +129,6 @@ async function runBackgroundSync(dbArchivio, dbSoglie, apiKey) {
       const divCode = lega.div;
       const apiId = lega.api_id;
 
-      // Chiamata con Header pulito e specifico per API-Sports
       const apiResponse = await fetch(
         "https://v3.football.api-sports.io/fixtures?league=" + apiId + "&season=" + stagioneCorrente,
         {
@@ -196,8 +191,9 @@ async function runBackgroundSync(dbArchivio, dbSoglie, apiKey) {
         }
       }
 
+      // PAUSA DI SICUREZZA DI 6.5 SECONDI
       if (i < leghe.results.length - 1) {
-        await delay(1200); 
+        await delay(6500); 
       }
     }
 
