@@ -43,6 +43,7 @@ export default {
     const url = new URL(request.url);
     const dbArchivio = env.DB_ARCHIVIO;
     const dbSoglie = env.DB_SOGLIE;
+    const apiKey = env.API_FOOTBALL_KEY || "a045158f354f22a763d193b99f52ae48";
 
     // 1. ROTTA PARTITE ON-DEMAND (Accordion integrato nella grafica scura)
     if (url.pathname === "/matches") {
@@ -56,7 +57,7 @@ export default {
         ).bind(leagueDiv).all();
 
         if (!matches.results || matches.results.length === 0) {
-          return new Response("<p style='color: #94a3b8; padding: 10px; margin: 0;'>Nessuna partita scaricata per questa lega.</p>", {
+          return new Response("<p style='color: #94a3b8; padding: 10px; margin: 0;'>Nessuna partita salvata per questo campionato.</p>", {
             headers: { "Content-Type": "text/html; charset=utf-8" }
           });
         }
@@ -88,7 +89,7 @@ export default {
       }
     }
 
-    // 2. ROTTA DI STATO JSON (Per il Long Polling della dashboard)
+    // 2. ROTTA DI STATO JSON (Per il Long Polling)
     if (url.pathname === "/status") {
       try {
         const lastSyncRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'last_sync'").first();
@@ -197,38 +198,38 @@ export default {
         html += ".subtitle-stats span.neon { color: #00ebff; }";
         html += ".subtitle-time { text-align: center; color: #00ebff; font-size: 11px; font-weight: 800; letter-spacing: 1.5px; margin-bottom: 25px; text-transform: uppercase; }";
         
-        html += ".league-item { background: #0f172a; border: 1px solid #1e293b; margin-bottom: 14px; padding: 16px; border-radius: 8px; transition: background 0.2s, border-color 0.2s; position: relative; }";
-        html += ".league-item:hover { background: #1e293b; border-color: #334155; }";
+        html += ".league-item { background: #0f172a; border: 1px solid #1e293b; margin-bottom: 14px; padding: 16px; border-radius: 8px; cursor: pointer; transition: background 0.2s, border-color 0.2s, box-shadow 0.2s; position: relative; }";
+        html += ".league-item:hover { background: #1e293b; }";
+        
+        // MODIFICA 2: Bordo Ciano Neon quando la card è selezionata (ha classe .selected)
+        html += ".league-item.selected { border-color: #00ebff !important; box-shadow: 0 0 10px rgba(0, 235, 255, 0.4); }";
+        
         html += ".league-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 14px; letter-spacing: 0.5px; }";
         html += ".league-header span.title { display: flex; align-items: center; gap: 8px; color: #ffffff; }";
         html += ".league-header span.pct { color: #00ebff; font-weight: 800; }";
         
-        // Stile per la selezione (checkbox discreta)
-        html += ".league-select-wrapper { display: flex; align-items: center; gap: 12px; }";
-        html += ".league-checkbox { width: 18px; height: 18px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; accent-color: #00ebff; cursor: pointer; }";
-        
-        html += ".league-sub { font-size: 11px; color: #64748b; margin-top: 6px; display: flex; align-items: center; gap: 6px; cursor: pointer; }";
+        html += ".league-sub { font-size: 11px; color: #64748b; margin-top: 6px; display: flex; align-items: center; gap: 6px; }";
         html += ".accordion-content { display: none; margin-top: 15px; border-top: 1px solid #1e293b; padding-top: 12px; overflow-x: auto; }";
         
         html += ".status-running-msg { text-align: center; color: #f59e0b; font-size: 13px; font-weight: bold; margin-bottom: 15px; }";
         html += ".error-box { background: #ef444422; border-left: 4px solid #ef4444; padding: 12px; margin-bottom: 20px; border-radius: 4px; color: #fca5a5; font-size: 13px; }";
         
-        // Tab Bar Inferiore fissa con i 5 pulsanti definitivi
+        // Tab Bar Inferiore fissa con i 5 pulsanti definitivi (ALL, START, PAUSA, NITRO, RESET)
         html += ".bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #090d16; border-top: 1px solid #1e293b; display: flex; justify-content: space-around; align-items: center; padding: 10px 0; z-index: 1000; box-shadow: 0 -4px 10px rgba(0,0,0,0.5); }";
-        html += ".nav-btn { background: none; border: none; display: flex; flex-direction: column; align-items: center; color: #64748b; cursor: pointer; text-decoration: none; padding: 4px 10px; width: 20%; }";
+        html += ".nav-btn { background: none; border: none; display: flex; flex-direction: column; align-items: center; color: #64748b; cursor: pointer; text-decoration: none; padding: 4px 10px; width: 20%; transition: color 0.2s, filter 0.2s; }";
         html += ".nav-btn-active { color: #00ebff !important; }";
         html += ".nav-btn-disabled { opacity: 0.15; cursor: not-allowed; }";
         html += ".nav-icon { font-size: 20px; margin-bottom: 3px; }";
         html += ".nav-label { font-size: 8px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }";
         
-        // Nitro e Stato Attivo
+        // Stili Nitro e Stati di elaborazione
         html += ".nitro-active { color: #f97316 !important; filter: drop-shadow(0 0 8px rgba(249,115,22,0.6)); }";
         html += ".status-running { color: #f59e0b !important; }";
         html += "</style></head><body>";
         
         html += "<div class='container'>";
         
-        // Titolo GOLDBET MONTECARLO
+        // Intestazione GOLDBET MONTECARLO
         html += "<div class='header-title'><span class='white'>GOLDBET</span> <span class='neon'>MONTECARLO</span></div>";
         html += "<div class='subtitle-stats'><span id='stat-totale' class='neon'>" + totalePartite + "</span> PARTITE SALVATE | STAGIONE <span id='stat-season' class='neon'>" + currentSeason + "</span></div>";
         html += "<div class='subtitle-time'>ULTIMO AGGIORNAMENTO <span id='stat-last-sync'>" + lastSync + "</span></div>";
@@ -245,7 +246,7 @@ export default {
           html += "<div id='error-box' class='error-box' style='display:none;'></div>";
         }
 
-        // Elenco campionati con Checkbox di selezione
+        // Elenco campionati (Spuntati di default con classe .selected)
         html += "<div class='league-list'>";
         
         for (let i = 0; i < listaLeghe.length; i++) {
@@ -268,15 +269,13 @@ export default {
           const lastMatchRes = await dbSoglie.prepare("SELECT MAX(event_date) as ultima FROM calendario_partite WHERE league_div = ?").bind(code).first();
           const ultimaData = lastMatchRes && lastMatchRes.ultima ? new Date(lastMatchRes.ultima).toLocaleDateString("it-IT", { year: "numeric", month: "2-digit", day: "2-digit" }) : "N.D.";
 
-          html += "<div class='league-item' id='card-" + code + "'>";
+          // MODIFICA 2: Card con classe .selected attiva all'avvio e funzione onclick diretta
+          html += "<div class='league-item selected' id='card-" + code + "' onclick='toggleLeague(\"" + code + "\")'>";
           html += "<div class='league-header'>";
-          html += "<div class='league-select-wrapper'>";
-          html += "<input type='checkbox' class='league-checkbox' value='" + code + "' checked>";
-          html += "<span class='title' onclick='toggleLeague(\"" + code + "\")'><span>" + flag + "</span> " + fullLabel + "</span>";
+          html += "<span class='title'><span>" + flag + "</span> " + fullLabel + "</span>";
+          html += "<span id='pct-" + code + "' class='pct'>" + pct + "</span>";
           html += "</div>";
-          html += "<span id='pct-" + code + "' class='pct' onclick='toggleLeague(\"" + code + "\")'>" + pct + "</span>";
-          html += "</div>";
-          html += "<div class='league-sub' onclick='toggleLeague(\"" + code + "\")'>";
+          html += "<div class='league-sub'>";
           html += "<span>📅</span> <span id='sub-" + code + "'>" + (lStatus === "completed" ? "Ultima partita: " + ultimaData : "In attesa di sincronizzazione") + "</span>";
           html += "</div>";
           html += "<div class='accordion-content' id='content-" + code + "'>";
@@ -287,86 +286,109 @@ export default {
         html += "</div>";
         html += "</div>"; // Chiude container
 
-        // Tab Bar Inferiore (ALL, START, PAUSA, NITRO, RESET)
+        // Tab Bar Inferiore fissa con i 5 pulsanti, completamente asincroni (senza form)
         html += "<div class='bottom-nav'>";
         
-        // 1. ALL (Seleziona tutto)
+        // 1. ALL (Seleziona/Deseleziona tutto)
         html += "<button onclick='toggleAll()' class='nav-btn nav-btn-active'><span class='nav-icon'>☑️</span><span class='nav-label'>ALL</span></button>";
         
-        // 2. START (Avvia solo le leghe spuntate)
+        // 2. START (Avvia solo le leghe selezionate via AJAX)
         html += "<button id='btn-start' onclick='startSync()' class='nav-btn' style='color: #10b981;'><span class='nav-icon'>▶️</span><span class='nav-label'>START</span></button>";
 
-        // 3. PAUSA (Ferma il download)
+        // 3. PAUSA (Ferma il download via AJAX)
         html += "<button id='btn-pause' onclick='triggerPause()' class='nav-btn' style='color: #f59e0b;'><span class='nav-icon'>⏸️</span><span class='nav-label'>PAUSA</span></button>";
         
-        // 4. NITRO (Interruttore velocità)
+        // 4. NITRO (Interruttore velocità via JS)
         html += "<button id='btn-nitro' onclick='toggleNitro()' class='nav-btn'><span class='nav-icon'>🔥</span><span class='nav-label'>NITRO</span></button>";
         
-        // 5. RESET (Svuota tutto)
+        // 5. RESET (Svuota tutto via AJAX)
         html += "<button id='btn-reset' onclick='triggerReset()' class='nav-btn' style='color: #ef4444;'><span class='nav-icon'>⛔</span><span class='nav-label'>RESET</span></button>";
 
         html += "</div>"; // Chiude bottom-nav
 
-        // CODICE JAVASCRIPT LATO CLIENT (Gestisce l'interfaccia interattiva dell'utente)
+        // CODICE JAVASCRIPT LATO CLIENT (Gestisce l'interfaccia interattiva dell'utente senza ricaricamento)
         html += "<script>";
         html += "let globalStatus = '" + syncStatus + "';";
 
+        // MODIFICA 2: Tocco unificato (Accendi/Apri e Spegni/Chiudi)
         html += "async function toggleLeague(code) {";
+        html += "  const card = document.getElementById('card-' + code);";
         html += "  const el = document.getElementById('content-' + code);";
-        html += "  if (el.style.display === 'block') {";
-        html += "    el.style.display = 'none';";
-        html += "  } else {";
+        html += "  const isSelected = card.classList.toggle('selected');";
+        
+        html += "  if (isSelected) {";
         html += "    el.style.display = 'block';";
         html += "    el.innerHTML = 'Caricamento partite...';";
         html += "    const r = await fetch('/matches?league=' + code);";
         html += "    el.innerHTML = await r.text();";
+        html += "  } else {";
+        html += "    el.style.display = 'none';";
         html += "  }";
         html += "}";
 
-        // Funzione per il pulsante ALL (Spunta/Despunta tutto)
+        // Funzione per il pulsante ALL (Spegne tutte o accende tutte le card)
         html += "function toggleAll() {";
-        html += "  const checkboxes = document.querySelectorAll('.league-checkbox');";
-        html += "  const anyUnchecked = Array.from(checkboxes).some(c => !c.checked);";
-        html += "  checkboxes.forEach(c => c.checked = anyUnchecked);";
+        html += "  const cards = document.querySelectorAll('.league-item');";
+        html += "  const allSelected = Array.from(cards).every(c => c.classList.contains('selected'));";
+        
+        html += "  for (let i = 0; i < cards.length; i++) {";
+        html += "    const card = cards[i];";
+        html += "    const code = card.id.replace('card-', '');";
+        html += "    const el = document.getElementById('content-' + code);";
+        
+        html += "    if (allSelected) {";
+        html += "      card.classList.remove('selected');";
+        html += "      el.style.display = 'none';";
+        html += "    } else {";
+        html += "      if (!card.classList.contains('selected')) {";
+        html += "        card.classList.add('selected');";
+        html += "      }";
+        html += "    }";
+        html += "  }";
         html += "}";
 
-        // Funzione per il pulsante NITRO (Toggle classe attivo)
+        // Funzione per il pulsante NITRO
         html += "function toggleNitro() {";
         html += "  const btn = document.getElementById('btn-nitro');";
         html += "  btn.classList.toggle('nitro-active');";
         html += "}";
 
-        // Funzione per avviare la Sincronizzazione dei soli selezionati
+        // Funzione per avviare la Sincronizzazione via AJAX delle sole card accese di Ciano
         html += "async function startSync() {";
         html += "  if (globalStatus === 'running') return;";
-        html += "  const selected = Array.from(document.querySelectorAll('.league-checkbox:checked')).map(c => c.value);";
-        html += "  if (selected.length === 0) {";
-        html += "    alert('Spunta almeno un campionato prima di avviare la sincronizzazione!');";
+        html += "  const selectedCards = document.querySelectorAll('.league-item.selected');";
+        html += "  if (selectedCards.length === 0) {";
+        html += "    alert('Tocca almeno un campionato per accenderlo di ciano prima di avviare!');";
         html += "    return;";
         html += "  }";
+        
+        html += "  const selectedCodes = Array.from(selectedCards).map(c => c.id.replace('card-', '')).join(',');";
         html += "  const nitroActive = document.getElementById('btn-nitro').classList.contains('nitro-active') ? '1' : '0';";
+        
         html += "  document.getElementById('btn-start').disabled = true;";
         html += "  document.getElementById('btn-reset').disabled = true;";
         html += "  document.getElementById('sync-msg').style.display = 'block';";
-        html += "  document.getElementById('sync-msg').innerText = 'Sincronizzazione in corso...';";
+        html += "  document.getElementById('sync-msg').innerText = 'Sincronizzazione avviata in background...';";
         
         html += "  const formData = new FormData();";
-        html += "  formData.append('leagues', selected.join(','));";
+        html += "  formData.append('leagues', selectedCodes);";
         html += "  formData.append('nitro', nitroActive);";
+        
         html += "  await fetch('/sync', { method: 'POST', body: formData });";
         html += "  updateStatus();";
         html += "}";
 
-        // Funzione per inviare il segnale di PAUSA
+        // Funzione per inviare il segnale di PAUSA via AJAX
         html += "async function triggerPause() {";
-        html += "  document.getElementById('sync-msg').innerText = 'Pausa richiesta... attesa completamento lega corrente.';";
+        html += "  const msgEl = document.getElementById('sync-msg');";
+        html += "  if (msgEl) { msgEl.innerText = 'Pausa richiesta... attesa completamento del download corrente.'; }";
         html += "  await fetch('/pause', { method: 'POST' });";
         html += "  updateStatus();";
         html += "}";
 
-        // Funzione per il RESET del database
+        // Funzione per il RESET completo del database via AJAX
         html += "async function triggerReset() {";
-        html += "  if (!confirm('Sei sicuro di voler resettare interamente il database del calendario?')) return;";
+        html += "  if (!confirm('Sei sicuro di voler cancellare e resettare TUTTE le partite salvate?')) return;";
         html += "  await fetch('/reset', { method: 'POST' });";
         html += "  updateStatus();";
         html += "}";
@@ -431,63 +453,17 @@ export default {
       }
     }
 
-    // 6. ROTTA POST /sync (RICEZIONE SELEZIONE E AVVIO BACKGROUND)
-    if (url.pathname === "/sync" && request.method === "POST") {
-      try {
-        const statusCheck = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
-        if (statusCheck && statusCheck.value === "running") {
-          return new Response(JSON.stringify({ error: "Sincronizzazione gia in corso" }), { status: 400 });
-        }
-
-        const formData = await request.formData();
-        const leaguesStr = formData.get("leagues");
-        const nitroStr = formData.get("nitro") || "0";
-
-        if (!leaguesStr) {
-          return new Response(JSON.stringify({ error: "Nessun campionato selezionato" }), { status: 400 });
-        }
-
-        const listLeagues = leaguesStr.split(",");
-
-        const resetStatements = [
-          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'running')"),
-          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', NULL)")
-        ];
-
-        // Resettiamo a rosso (pending) solo i campionati selezionati
-        for (let i = 0; i < listLeagues.length; i++) {
-          resetStatements.push(
-            dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'pending')").bind(listLeagues[i])
-          );
-        }
-
-        await dbSoglie.batch(resetStatements);
-
-        // Avvio asincrono in background passando le leghe scelte e lo stato di nitro
-        ctx.waitUntil(
-          runBackgroundSync(dbArchivio, dbSoglie, listLeagues, nitroStr)
-        );
-
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { "Content-Type": "application/json" }
-        });
-
-      } catch (err) {
-        return new Response(JSON.stringify({ error: err.message }), { status: 500 });
-      }
-    }
-
     return new Response("Risorsa non trovata", { status: 404 });
   }
 };
 
-// COMPITO IN BACKGROUND COMPLETAMENTE DINAMICO
+// COMPITO IN BACKGROUND TOTALMENTE INTERATTIVO CON PAUSA E NITRO DINAMICI
 async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, nitroMode) {
   try {
     let totaleInserite = 0;
     let rilevataStagione = "N.D.";
     
-    // Scelta della velocità (Pausa)
+    // Regolazione dinamica della velocità basata sull'interruttore NITRO
     const delayTime = nitroMode === "1" ? 1200 : 10000;
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -495,10 +471,10 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, nitroMod
       const divCode = selectedLeagues[i];
       const slug = MATCHESIO_SLUGS[divCode];
 
-      // CONTROLLO DEL SEGNALE DI PAUSA (Ad ogni step, prima di procedere)
+      // CONTROLLO ATTIVO DELLA PAUSA AD OGNI CAMBIAMENTO DI CAMPIONATO
       const statusCheck = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
       if (statusCheck && (statusCheck.value === "paused" || statusCheck.value === "idle")) {
-        console.log("Sincronizzazione interrotta o messa in pausa dall'utente.");
+        console.log("Processo interrotto o messo in pausa dall'utente.");
         break;
       }
 
@@ -527,7 +503,6 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, nitroMod
       const matches = await apiResponse.json();
 
       if (matches && matches.length > 0) {
-        // Estrae il nome della stagione reale (es. "2025/26") direttamente dal file
         if (matches[0].season) {
           rilevataStagione = matches[0].season;
         }
@@ -581,13 +556,12 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, nitroMod
       // Imposta lo stato della lega su "completed" (Verde 🟢)
       await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'completed')").bind(divCode).run();
 
-      // Pausa di sicurezza con tempo dinamico (1.2s o 10s)
+      // Pausa di sicurezza con tempo dinamico (10s Normal / 1.2s Nitro)
       if (i < selectedLeagues.length - 1) {
         await delay(delayTime); 
       }
     }
 
-    // Al termine, ripristina lo stato idle
     const adesso = new Date().toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
     await dbSoglie.batch([
       dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', ?)").bind(adesso),
