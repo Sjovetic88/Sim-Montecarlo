@@ -1,4 +1,4 @@
-// MAPPATURA CODICI FOOTBALL-DATA -> SLUG DI MATCHESIO
+// ABBINAMENTO CODICI -> SLUG DI MATCHESIO
 const MATCHESIO_SLUGS = {
   "E0": "premier-league-gb-eng",
   "E1": "championship-gb-eng",
@@ -22,13 +22,29 @@ const MATCHESIO_SLUGS = {
   "RUS": "premier-league-ru"
 };
 
+// DIZIONARIO PER RECREARE LA GRAFICA DELLA TUA FOTO (BANDIERE E NOMI PAESI)
+const LEAGUE_FLAGS = {
+  "ARG": "🇦🇷", "B1": "🇧🇪", "BRA": "🇧🇷", "CHN": "🇨🇳", "D1": "🇩🇪", "D2": "🇩🇪",
+  "DNK": "🇩🇰", "IRL": "🇮🇪", "MEX": "🇲🇽", "NOR": "🇳🇴", "P1": "🇵🇹", "RUS": "🇷🇺",
+  "SWE": "🇸🇪", "T1": "🇹🇷", "USA": "🇺🇸", "E0": "🇬🇧", "E1": "🇬🇧", "I1": "🇮🇹",
+  "I2": "🇮🇹", "SP1": "🇪🇸", "F1": "🇫🇷", "N1": "🇳🇱", "G1": "🇬🇷", "AUT": "🇦🇹", "SWZ": "🇨🇭"
+};
+
+const LEAGUE_NAMES = {
+  "ARG": "ARGENTINA", "B1": "BELGIUM", "BRA": "BRAZIL", "CHN": "CHINA", "D1": "GERMANY",
+  "D2": "GERMANY D2", "DNK": "DENMARK", "IRL": "IRELAND", "MEX": "MEXICO", "NOR": "NORWAY",
+  "P1": "PORTUGAL", "RUS": "RUSSIA", "SWE": "SWEDEN", "T1": "TURKEY", "USA": "USA",
+  "E0": "ENGLAND PREMIER", "E1": "ENGLAND CHAMPIONSHIP", "I1": "ITALY SERIE A",
+  "I2": "ITALY SERIE B", "SP1": "SPAIN LA LIGA", "F1": "FRANCE LIGUE 1", "N1": "NETHERLANDS EREDIVISIE"
+};
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const dbArchivio = env.DB_ARCHIVIO;
     const dbSoglie = env.DB_SOGLIE;
 
-    // 1. ROTTA PARTITE ON-DEMAND (Accordion dettagliato con anno inserito nella data)
+    // 1. ROTTA PARTITE ON-DEMAND (Accordion integrato nella grafica scura)
     if (url.pathname === "/matches") {
       const leagueDiv = url.searchParams.get("league");
       if (!leagueDiv) {
@@ -40,13 +56,13 @@ export default {
         ).bind(leagueDiv).all();
 
         if (!matches.results || matches.results.length === 0) {
-          return new Response("<p style='color: #94a3b8; padding: 10px; margin: 0;'>Nessuna partita salvata per questo campionato.</p>", {
+          return new Response("<p style='color: #94a3b8; padding: 10px; margin: 0;'>Nessuna partita scaricata per questa lega.</p>", {
             headers: { "Content-Type": "text/html; charset=utf-8" }
           });
         }
 
         let tableHtml = "<table style='width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; color: #cbd5e1;'>";
-        tableHtml += "<thead><tr style='border-bottom: 1px solid #475569; text-align: left;'><th style='padding: 8px;'>Data</th><th style='padding: 8px;'>Casa</th><th style='padding: 8px; text-align: center;'>Risultato</th><th style='padding: 8px;'>Fuori</th><th style='padding: 8px;'>Stato</th></tr></thead><tbody>";
+        tableHtml += "<thead><tr style='border-bottom: 1px solid #374151; text-align: left;'><th style='padding: 8px; color: #94a3b8;'>Data</th><th style='padding: 8px; color: #94a3b8;'>Casa</th><th style='padding: 8px; text-align: center; color: #94a3b8;'>Risultato</th><th style='padding: 8px; color: #94a3b8;'>Fuori</th></tr></thead><tbody>";
 
         for (let i = 0; i < matches.results.length; i++) {
           const m = matches.results[i];
@@ -55,12 +71,11 @@ export default {
           const risAway = m.goals_away !== null ? m.goals_away : "-";
           const risString = risHome + " - " + risAway;
 
-          tableHtml += "<tr style='border-bottom: 1px solid #334155;'>";
-          tableHtml += "<td style='padding: 8px;'>" + dataLocale + "</td>";
-          tableHtml += "<td style='padding: 8px; font-weight: bold;'>" + m.home_team_name_api + "</td>";
-          tableHtml += "<td style='padding: 8px; text-align: center; font-weight: bold; color: #10b981;'>" + risString + "</td>";
-          tableHtml += "<td style='padding: 8px; font-weight: bold;'>" + m.away_team_name_api + "</td>";
-          tableHtml += "<td style='padding: 8px; color: #94a3b8;'>" + m.status + "</td>";
+          tableHtml += "<tr style='border-bottom: 1px solid #1f2937;'>";
+          tableHtml += "<td style='padding: 8px; color: #94a3b8;'>" + dataLocale + "</td>";
+          tableHtml += "<td style='padding: 8px; font-weight: bold; color: #f1f5f9;'>" + m.home_team_name_api + "</td>";
+          tableHtml += "<td style='padding: 8px; text-align: center; font-weight: bold; color: #00ebff;'>" + risString + "</td>";
+          tableHtml += "<td style='padding: 8px; font-weight: bold; color: #f1f5f9;'>" + m.away_team_name_api + "</td>";
           tableHtml += "</tr>";
         }
 
@@ -69,7 +84,7 @@ export default {
           headers: { "Content-Type": "text/html; charset=utf-8" }
         });
       } catch (err) {
-        return new Response("Errore caricamento partite: " + err.message, { status: 500 });
+        return new Response("Errore caricamento: " + err.message, { status: 500 });
       }
     }
 
@@ -81,7 +96,7 @@ export default {
         const errorRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'error'").first();
         const seasonRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'current_season'").first();
 
-        const lastSync = lastSyncRes ? lastSyncRes.value : "Mai sincronizzato";
+        const lastSync = lastSyncRes ? lastSyncRes.value : "MAI AGGIORNATO";
         const syncStatus = statusRes ? statusRes.value : "idle";
         const syncError = errorRes ? errorRes.value : null;
         const currentSeason = seasonRes ? seasonRes.value : "N.D.";
@@ -116,13 +131,13 @@ export default {
       }
     }
 
-    // 3. ROTTA POST /reset (Svuota la tabella calendario)
+    // 3. ROTTA POST /reset (Ripristino completo del DB)
     if (url.pathname === "/reset" && request.method === "POST") {
       try {
         const resetStatements = [
           dbSoglie.prepare("DELETE FROM calendario_partite"),
           dbSoglie.prepare("UPDATE api_status SET value = 'pending' WHERE metric LIKE 'sync_league_%'"),
-          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', 'Dati cancellati')"),
+          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', 'DATI RESETTATI')"),
           dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('current_season', 'N.D.')"),
           dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', NULL)"),
           dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'idle')")
@@ -134,11 +149,11 @@ export default {
           headers: { "Location": "/" }
         });
       } catch (err) {
-        return new Response("Errore durante il reset del database: " + err.message, { status: 500 });
+        return new Response("Errore reset: " + err.message, { status: 500 });
       }
     }
 
-    // 4. ROTTA PRINCIPALE (DASHBOARD)
+    // 4. ROTTA PRINCIPALE (DASHBOARD - Grafica identica al tuo Screenshot)
     if (url.pathname === "/") {
       try {
         const statusRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
@@ -146,7 +161,7 @@ export default {
         const errorRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'error'").first();
         const seasonRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'current_season'").first();
         
-        const lastSync = lastSyncRes ? lastSyncRes.value : "Mai sincronizzato";
+        const lastSync = lastSyncRes ? lastSyncRes.value : "MAI AGGIORNATO";
         const syncStatus = statusRes ? statusRes.value : "idle";
         const syncError = errorRes ? errorRes.value : null;
         const currentSeason = seasonRes ? seasonRes.value : "N.D.";
@@ -157,54 +172,54 @@ export default {
         const countRes = await dbSoglie.prepare("SELECT COUNT(*) as totale FROM calendario_partite").first();
         const totalePartite = countRes ? countRes.totale : 0;
 
-        let html = "<!DOCTYPE html><html><head><title>Goldbet Legislatore - Sync</title>";
+        let html = "<!DOCTYPE html><html><head><title>Goldbet Montecarlo</title>";
+        html += "<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'>";
         html += "<style>";
-        html += "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px; margin: 0; }";
-        html += ".container { max-width: 800px; margin: 0 auto; background: #1e293b; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); position: relative; }";
-        html += ".badge { position: absolute; top: 30px; right: 30px; background: #10b981; color: #fff; padding: 8px 16px; border-radius: 20px; font-weight: bold; font-size: 14px; box-shadow: 0 0 10px rgba(16,185,129,0.3); }";
-        html += "h1 { color: #38bdf8; margin-top: 0; }";
-        html += "p { color: #94a3b8; font-size: 16px; line-height: 1.6; }";
-        html += ".btn-group { display: flex; gap: 12px; margin-top: 20px; }";
-        html += ".btn { display: inline-block; background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; text-decoration: none; font-size: 16px; transition: background 0.2s; }";
-        html += ".btn:hover { background: #2563eb; }";
-        html += ".btn-reset { background: #ef4444; }";
-        html += ".btn-reset:hover { background: #dc2626; }";
-        html += ".btn:disabled { background: #475569; cursor: not-allowed; }";
-        html += ".league-list { margin-top: 30px; }";
-        html += ".league-item { background: #334155; margin-bottom: 12px; padding: 15px; border-radius: 8px; cursor: pointer; transition: background 0.2s; }";
-        html += ".league-item:hover { background: #475569; }";
-        html += ".league-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; }";
-        html += ".accordion-content { display: none; margin-top: 15px; border-top: 1px solid #475569; padding-top: 10px; }";
-        html += ".status-running { color: #f59e0b; font-weight: bold; }";
-        html += ".error-box { background: #ef444422; border-left: 4px solid #ef4444; padding: 15px; margin-top: 20px; border-radius: 4px; color: #fca5a5; font-size: 14px; }";
-        html += ".stats { margin-top: 30px; border-top: 1px solid #334155; padding-top: 20px; }";
-        html += ".stat-item { margin-bottom: 10px; font-size: 15px; }";
-        html += ".stat-label { color: #94a3b8; }";
-        html += ".stat-val { font-weight: bold; color: #f1f5f9; }";
-        html += "</style></head><body>";
-        html += "<div class='container'>";
-        html += "<div class='badge'>MATCHESIO SYNC</div>";
-        html += "<h1>Sincronizzatore Calendari</h1>";
-        html += "<p>Scarica in background i calendari ufficiali gratuiti della stagione in corso da Matchesio.com basandosi sui campionati di 'archivio_partite'.</p>";
+        html += "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #000000; color: #f8fafc; padding: 20px 20px 100px 20px; margin: 0; box-sizing: border-box; }";
+        html += ".container { max-width: 480px; margin: 0 auto; }";
         
-        html += "<div class='btn-group'>";
-        if (syncStatus === "running") {
-          html += "<button id='sync-btn' class='btn' disabled>Sincronizzazione in corso...</button>";
-        } else {
-          html += "<form action='/sync' method='POST'>";
-          html += "<button id='sync-btn' type='submit' class='btn'>Avvia Sincronizzazione Ora</button>";
-          html += "</form>";
-          
-          html += "<form action='/reset' method='POST' onsubmit=\"return confirm('Sei sicuro di voler cancellare TUTTE le partite salvate dal database?')\">";
-          html += "<button id='reset-btn' type='submit' class='btn btn-reset'>Resetta Dati</button>";
-          html += "</form>";
-        }
-        html += "</div>";
+        // Stile del titolo in stile GOLDBET ENGINE
+        html += ".header-title { text-align: center; font-size: 24px; font-weight: 800; letter-spacing: 1px; margin-top: 10px; margin-bottom: 4px; }";
+        html += ".header-title span.white { color: #ffffff; }";
+        html += ".header-title span.neon { color: #00ebff; }";
+        
+        html += ".subtitle-stats { text-align: center; color: #94a3b8; font-size: 13px; font-weight: bold; letter-spacing: 0.5px; margin-bottom: 4px; }";
+        html += ".subtitle-stats span.neon { color: #00ebff; }";
+        html += ".subtitle-time { text-align: center; color: #00ebff; font-size: 11px; font-weight: 800; letter-spacing: 1.5px; margin-bottom: 25px; text-transform: uppercase; }";
+        
+        // Stile delle Card dei campionati
+        html += ".league-item { background: #0f172a; border: 1px solid #1e293b; margin-bottom: 14px; padding: 16px; border-radius: 8px; cursor: pointer; transition: background 0.2s, border-color 0.2s; }";
+        html += ".league-item:hover { background: #1e293b; border-color: #334155; }";
+        html += ".league-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 14px; letter-spacing: 0.5px; }";
+        html += ".league-header span.title { display: flex; align-items: center; gap: 8px; color: #ffffff; }";
+        html += ".league-header span.pct { color: #00ebff; font-weight: 800; }";
+        html += ".league-sub { font-size: 11px; color: #64748b; margin-top: 6px; display: flex; align-items: center; gap: 6px; }";
+        html += ".accordion-content { display: none; margin-top: 15px; border-top: 1px solid #1e293b; padding-top: 12px; overflow-x: auto; }";
+        
+        // Notifiche ed errori
+        html += ".status-running-msg { text-align: center; color: #f59e0b; font-size: 13px; font-weight: bold; margin-bottom: 15px; }";
+        html += ".error-box { background: #ef444422; border-left: 4px solid #ef4444; padding: 12px; margin-bottom: 20px; border-radius: 4px; color: #fca5a5; font-size: 13px; }";
+        
+        // Tab Bar Inferiore fissa in stile nativo
+        html += ".bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #090d16; border-top: 1px solid #1e293b; display: flex; justify-content: space-around; align-items: center; padding: 10px 0; z-index: 1000; box-shadow: 0 -4px 10px rgba(0,0,0,0.5); }";
+        html += ".nav-btn { background: none; border: none; display: flex; flex-direction: column; align-items: center; color: #64748b; cursor: pointer; text-decoration: none; padding: 4px 10px; }";
+        html += ".nav-btn-active { color: #00ebff !important; }";
+        html += ".nav-btn-disabled { opacity: 0.25; cursor: not-allowed; }";
+        html += ".nav-icon { font-size: 20px; margin-bottom: 3px; }";
+        html += ".nav-label { font-size: 9px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }";
+        html += "</style></head><body>";
+        
+        html += "<div class='container'>";
+        
+        // Titolo in Stile GOLDBET MONTECARLO
+        html += "<div class='header-title'><span class='white'>GOLDBET</span> <span class='neon'>MONTECARLO</span></div>";
+        html += "<div class='subtitle-stats'><span id='stat-totale' class='neon'>" + totalePartite + "</span> PARTITE SALVATE | STAGIONE <span id='stat-season' class='neon'>" + currentSeason + "</span></div>";
+        html += "<div class='subtitle-time'>ULTIMO AGGIORNAMENTO <span id='stat-last-sync'>" + lastSync + "</span></div>";
 
         if (syncStatus === "running") {
-          html += "<p id='sync-msg' class='status-running'>Sincronizzazione attiva in background (10 secondi di pausa tra i campionati per proteggere la rete).</p>";
+          html += "<div id='sync-msg' class='status-running-msg'>Sincronizzazione in corso... ricarica tra poco per seguire l'avanzamento.</div>";
         } else {
-          html += "<p id='sync-msg' style='display:none;' class='status-running'></p>";
+          html += "<div id='sync-msg' style='display:none;' class='status-running-msg'></div>";
         }
 
         if (syncError) {
@@ -213,8 +228,8 @@ export default {
           html += "<div id='error-box' class='error-box' style='display:none;'></div>";
         }
 
+        // Elenco campionati
         html += "<div class='league-list'>";
-        html += "<h3>Stato Campionati</h3>";
         
         for (let i = 0; i < listaLeghe.length; i++) {
           const l = listaLeghe[i];
@@ -223,14 +238,31 @@ export default {
           const lStatusRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'sync_league_' || ?").bind(code).first();
           const lStatus = lStatusRes ? lStatusRes.value : "pending";
           
+          // Definiamo il testo della percentuale in stile Engine
+          let pct = "0.0%";
           let emoji = "🔴";
-          if (lStatus === "syncing") emoji = "🟡";
-          if (lStatus === "completed") emoji = "🟢";
+          if (lStatus === "syncing") {
+            pct = "SYNCING";
+            emoji = "🟡";
+          } else if (lStatus === "completed") {
+            pct = "100.0%";
+            emoji = "🟢";
+          }
+
+          const flag = LEAGUE_FLAGS[code] || "⚽";
+          const fullLabel = LEAGUE_NAMES[code] || code;
+
+          // Recuperiamo la data dell'ultimo match salvato per questo campionato
+          const lastMatchRes = await dbSoglie.prepare("SELECT MAX(event_date) as ultima FROM calendario_partite WHERE league_div = ?").bind(code).first();
+          const ultimaData = lastMatchRes && lastMatchRes.ultima ? new Date(lastMatchRes.ultima).toLocaleDateString("it-IT", { year: "numeric", month: "2-digit", day: "2-digit" }) : "N.D.";
 
           html += "<div class='league-item' onclick='toggleLeague(\"" + code + "\")'>";
           html += "<div class='league-header'>";
-          html += "<span>" + code + "</span>";
-          html += "<span id='emoji-" + code + "'>" + emoji + "</span>";
+          html += "<span class='title'><span>" + flag + "</span> " + fullLabel + "</span>";
+          html += "<span id='pct-" + code + "' class='pct'>" + pct + "</span>";
+          html += "</div>";
+          html += "<div class='league-sub'>";
+          html += "<span>📅</span> <span id='sub-" + code + "'>" + (lStatus === "completed" ? "Ultima partita: " + ultimaData : "In attesa di sincronizzazione") + "</span>";
           html += "</div>";
           html += "<div class='accordion-content' id='content-" + code + "'>";
           html += "Caricamento partite...";
@@ -238,14 +270,44 @@ export default {
           html += "</div>";
         }
         html += "</div>";
+        html += "</div>"; // Chiude container
 
-        html += "<div class='stats'>";
-        html += "<div class='stat-item'><span class='stat-label'>Stagione Rilevata: </span><span id='stat-season' class='stat-val'>" + currentSeason + "</span></div>";
-        html += "<div class='stat-item'><span class='stat-label'>Ultimo aggiornamento: </span><span id='stat-last-sync' class='stat-val'>" + lastSync + "</span></div>";
-        html += "<div class='stat-item'><span class='stat-label'>Partite attualmente salvate: </span><span id='stat-totale' class='stat-val'>" + totalePartite + "</span></div>";
-        html += "</div>";
-        html += "</div>";
+        // Tab Bar Inferiore fissa con i 6 pulsanti del tuo Screenshot (start e reset attivi)
+        html += "<div class='bottom-nav'>";
+        
+        // 1. ALL (Visuale)
+        html += "<div class='nav-btn nav-btn-disabled'><span class='nav-icon'>☑️</span><span class='nav-label'>ALL</span></div>";
+        
+        // 2. PROCESS (🔄 Cliccabile: Aggiorna lo stato della pagina)
+        html += "<button onclick='window.location.reload()' class='nav-btn nav-btn-active'><span class='nav-icon'>🔄</span><span class='nav-label'>PROCESS</span></button>";
+        
+        // 3. START (▶️ Cliccabile: Avvia Sincronizzazione)
+        if (syncStatus === "running") {
+          html += "<div class='nav-btn nav-btn-disabled'><span class='nav-icon'>▶️</span><span class='nav-label' style='color: #475569;'>START</span></div>";
+        } else {
+          html += "<form id='sync-form' action='/sync' method='POST' style='margin:0;'>";
+          html += "<button type='submit' class='nav-btn' style='color: #10b981;'><span class='nav-icon'>▶️</span><span class='nav-label'>START</span></button>";
+          html += "</form>";
+        }
 
+        // 4. PAUSA (Visuale)
+        html += "<div class='nav-btn nav-btn-disabled'><span class='nav-icon'>⏸️</span><span class='nav-label'>PAUSA</span></div>";
+        
+        // 5. NITRO (Visuale)
+        html += "<div class='nav-btn nav-btn-disabled'><span class='nav-icon'>🔥</span><span class='nav-label'>NITRO</span></div>";
+        
+        // 6. RESET (⛔ Cliccabile: Cancella i dati con conferma)
+        if (syncStatus === "running") {
+          html += "<div class='nav-btn nav-btn-disabled'><span class='nav-icon'>⛔</span><span class='nav-label' style='color: #475569;'>RESET</span></div>";
+        } else {
+          html += "<form action='/reset' method='POST' onsubmit=\"return confirm('Sei sicuro di voler azzerare ed eliminare tutte le partite dal database?')\" style='margin:0;'>";
+          html += "<button type='submit' class='nav-btn' style='color: #ef4444;'><span class='nav-icon'>⛔</span><span class='nav-label'>RESET</span></button>";
+          html += "</form>";
+        }
+
+        html += "</div>"; // Chiude bottom-nav
+
+        // CODICE JAVASCRIPT LATO CLIENT (Gestisce l'interfaccia interattiva dell'utente)
         html += "<script>";
         html += "async function toggleLeague(code) {";
         html += "  const el = document.getElementById('content-' + code);";
@@ -269,12 +331,10 @@ export default {
         html += "    document.getElementById('stat-season').innerText = data.season;";
         
         html += "    if (data.status === 'running') {";
-        html += "      const btn = document.getElementById('sync-btn');";
-        html += "      if (btn) { btn.disabled = true; btn.innerText = 'Sincronizzazione in corso...'; }";
-        html += "      const rBtn = document.getElementById('reset-btn');";
-        html += "      if (rBtn) { rBtn.style.display = 'none'; }";
         html += "      document.getElementById('sync-msg').style.display = 'block';";
-        html += "      document.getElementById('sync-msg').innerText = 'Sincronizzazione attiva in background (10 secondi di pausa tra campionati).';";
+        html += "      document.getElementById('sync-msg').innerText = 'Sincronizzazione in corso... ricarica tra poco per seguire l\\\'avanzamento.';";
+        html += "    } else {";
+        html += "      document.getElementById('sync-msg').style.display = 'none';";
         html += "    }";
 
         html += "    if (data.error) {";
@@ -285,11 +345,18 @@ export default {
         html += "    }";
 
         html += "    for (const [code, val] of Object.entries(data.leagues)) {";
-        html += "      const emojiEl = document.getElementById('emoji-' + code);";
-        html += "      if (emojiEl) {";
-        html += "        if (val === 'syncing') emojiEl.innerText = '🟡';";
-        html += "        else if (val === 'completed') emojiEl.innerText = '🟢';";
-        html += "        else emojiEl.innerText = '🔴';";
+        html += "      const pctEl = document.getElementById('pct-' + code);";
+        html += "      const subEl = document.getElementById('sub-' + code);";
+        html += "      if (pctEl) {";
+        html += "        if (val === 'syncing') {";
+        html += "          pctEl.innerText = 'SYNCING';";
+        html += "          if (subEl) subEl.innerText = 'Download del calendario in corso...';";
+        html += "        } else if (val === 'completed') {";
+        html += "          pctEl.innerText = '100.0%';";
+        html += "        } else {";
+        html += "          pctEl.innerText = '0.0%';";
+        html += "          if (subEl) subEl.innerText = 'In attesa di sincronizzazione';";
+        html += "        }";
         html += "      }";
         html += "    }";
         html += "  } catch(e) {}";
@@ -332,7 +399,7 @@ export default {
 
         await dbSoglie.batch(resetStatements);
 
-        // Avvio background asincrono pulito (SENZA apiKey)
+        // Avvio background asincrono pulito
         ctx.waitUntil(
           runBackgroundSync(dbArchivio, dbSoglie)
         );
@@ -457,7 +524,7 @@ async function runBackgroundSync(dbArchivio, dbSoglie) {
       }
     }
 
-    const adesso = new Date().toISOString();
+    const adesso = new Date().toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
     await dbSoglie.batch([
       dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', ?)").bind(adesso),
       dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('current_season', ?)").bind(rilevataStagione),
