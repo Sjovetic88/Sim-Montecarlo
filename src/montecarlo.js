@@ -1,40 +1,63 @@
-// MAPPATURA CODICI LEAGUES -> SLUG DI MATCHESIO (Tutti i campionati coperti)
+// DIZIONARIO MULTI-CANDIDATO DI MATCHESIO (Includente i tuoi link verificati)
 const MATCHESIO_SLUGS = {
-  "E0": "premier-league-gb-eng",
-  "E1": "championship-gb-eng",
-  "E2": "league-one-gb-eng",
-  "E3": "league-two-gb-eng",
-  "EC": "national-league-gb-eng",
-  "I1": "serie-a-it",
-  "I2": "serie-b-it",
-  "D1": "bundesliga-de",
-  "D2": "2-bundesliga-de",
-  "SP1": "la-liga-es",
-  "SP2": "segunda-division-es",
-  "F1": "ligue-1-fr",
-  "F2": "ligue-2-fr",
-  "N1": "eredivisie-nl",
-  "B1": "first-division-a-be",
-  "P1": "primeira-liga-pt",
-  "T1": "super-lig-tr",
-  "DNK": "superliga-dk",
-  "USA": "mls-us",
-  "BRA": "serie-a-br",
-  "ARG": "liga-profesional-ar",
-  "NOR": "eliteserien-no",
-  "SWE": "allsvenskan-se",
-  "IRL": "premier-division-ie",
-  "MEX": "liga-mx-mx",
-  "CHN": "super-league-cn",
-  "RUS": "premier-league-ru",
-  "G1": "super-league-gr",
-  "AUT": "bundesliga-at",
-  "SWZ": "super-league-ch",
-  "SCO": "premiership-gb-sct",
-  "SC0": "premiership-gb-sct",
-  "SC1": "championship-gb-sct",
-  "SC2": "league-one-gb-sct",
-  "SC3": "league-two-gb-sct"
+  // Campionati verificati funzionanti
+  "E0": ["premier-league-gb-eng"],
+  "E1": ["championship-gb-eng"],
+  "I1": ["serie-a-it"],
+  "SP1": ["la-liga-es"],
+  "D1": ["bundesliga-de"],
+  "F1": ["ligue-1-fr"],
+  "N1": ["eredivisie-nl"],
+  "P1": ["primeira-liga-pt"],
+  "T1": ["super-lig-tr"],
+  "BRA": ["serie-a-br"],
+  "MEX": ["liga-mx-mx"],
+
+  // I TUOI LINK VERIFICATI DALLO SMARTPHONE
+  "B1": ["jupiler-pro-league-be"],
+  "USA": ["major-league-soccer-us"],
+  "I2": ["serie-b-it"],
+  "D2": ["2-bundesliga-de"],
+  "SP2": ["segunda-division-es"],
+  "F2": ["ligue-2-fr"],
+  "SCO": ["premiership-gb-sct"],
+  "SC0": ["premiership-gb-sct"],
+  "E2": ["league-one-gb-eng"],
+  "E3": ["league-two-gb-eng"],
+  "EC": ["national-league-gb-eng"],
+
+  // CAMPIONATI NON ANCORA VERIFICATI (Il Worker proverà in sequenza le 3 varianti per trovare quella giusta)
+  "DNK": ["superligaen-dk", "superliga-dk", "super-liga-dk"],
+  "RUS": ["premier-league-ru", "russian-premier-league-ru", "premier-liga-ru"],
+  "ARG": ["liga-profesional-ar", "liga-profesional-de-futbol-ar", "primera-division-ar"],
+  "NOR": ["eliteserien-no", "eliteserien-nor", "eliteserien-norway"],
+  "SWE": ["allsvenskan-se", "allsvenskan-swe", "allsvenskan-suede"],
+  "CHN": ["super-league-cn", "chinese-super-league-cn", "super-league-china"],
+  "IRL": ["premier-division-ie", "premier-division-irl", "league-of-ireland-premier-division"],
+  "G1": ["super-league-gr", "super-league-1-gr", "super-league-greece"],
+  "SWZ": ["super-league-ch", "credit-suisse-super-league-ch", "super-league-switzerland"],
+  "AUT": ["bundesliga-at", "austrian-bundesliga-at", "admiral-bundesliga-at"],
+  "SC1": ["championship-gb-sct", "scottish-championship-gb-sct", "championship-scotland"],
+  "SC2": ["league-one-gb-sct", "scottish-league-one-gb-sct", "league-one-scotland"],
+  "SC3": ["league-two-gb-sct", "scottish-league-two-gb-sct", "league-two-scotland"],
+  "POL": ["ekstraklasa-pl", "poland-ekstraklasa", "pko-ekstraklasa-pl"],
+  "JPN": ["j1-league-jp", "j-league-jp", "j1-league-japan"]
+};
+
+// DIZIONARIO EMOTICON BANDIERE
+const LEAGUE_FLAGS = {
+  "ARG": "🇦🇷", "B1": "🇧🇪", "BRA": "🇧🇷", "CHN": "🇨🇳", "D1": "🇩🇪", "D2": "🇩🇪",
+  "DNK": "🇩🇰", "IRL": "🇮🇪", "MEX": "🇲🇽", "NOR": "🇳🇴", "P1": "🇵🇹", "RUS": "🇷🇺",
+  "SWE": "🇸🇪", "T1": "🇹🇷", "USA": "🇺🇸", "E0": "🇬🇧", "E1": "🇬🇧", "I1": "🇮🇹",
+  "I2": "🇮🇹", "SP1": "🇪🇸", "F1": "🇫🇷", "N1": "🇳🇱", "G1": "🇬🇷", "AUT": "🇦🇹", "SWZ": "🇨🇭"
+};
+
+const LEAGUE_NAMES = {
+  "ARG": "ARGENTINA", "B1": "BELGIUM", "BRA": "BRAZIL", "CHN": "CHINA", "D1": "GERMANY",
+  "D2": "GERMANY D2", "DNK": "DENMARK", "IRL": "IRELAND", "MEX": "MEXICO", "NOR": "NORWAY",
+  "P1": "PORTUGAL", "RUS": "RUSSIA", "SWE": "SWEDEN", "T1": "TURKEY", "USA": "USA",
+  "E0": "ENGLAND PREMIER", "E1": "ENGLAND CHAMPIONSHIP", "I1": "ITALY SERIE A",
+  "I2": "ITALY SERIE B", "SP1": "SPAIN LA LIGA", "F1": "FRANCE LIGUE 1", "N1": "NETHERLANDS EREDIVISIE"
 };
 
 export default {
@@ -247,7 +270,7 @@ export default {
         
         html += "<div class='container'>";
         
-        // Logo Goldbet Montecarlo
+        // Intestazione GOLDBET MONTECARLO
         html += "<div class='header-title'><span class='white'>GOLDBET</span> <span class='neon'>MONTECARLO</span></div>";
         html += "<div class='subtitle-stats'><span id='stat-totale' class='neon'>" + totalePartite + "</span> PARTITE SALVATE | STAGIONE <span id='stat-season' class='neon'>" + currentSeason + "</span></div>";
         html += "<div class='subtitle-time'>ULTIMO AGGIORNAMENTO <span id='stat-last-sync'>" + lastSync + "</span></div>";
@@ -282,7 +305,7 @@ export default {
           }
 
           const flag = l.emoji || "⚽";
-          // MODIFICA RICHIESTA: Visualizzazione nel formato "[FLAG] [ID] [NAME]" (es. "🇩🇪 D1 Bundesliga")
+          // Visualizzazione nel formato "[FLAG] [ID] [NAME]" (es. "🇩🇪 D1 Bundesliga")
           const fullLabel = code + " " + l.name;
 
           const lastMatchRes = await dbSoglie.prepare("SELECT MAX(event_date) as ultima FROM calendario_partite WHERE league_div = ?").bind(code).first();
@@ -303,7 +326,7 @@ export default {
           html += "</div>";
         }
         html += "</div>";
-        html += "</div>";
+        html += "</div>"; // Chiude container
 
         // Tab Bar Inferiore fissa con i 5 pulsanti, completamente asincroni (senza form)
         html += "<div class='bottom-nav'>";
@@ -324,13 +347,13 @@ export default {
         // 5. RESET
         html += "<button id='btn-reset' onclick='triggerReset()' class='nav-btn' style='color: #ef4444;'><span class='nav-icon'>⛔</span><span class='nav-label'>RESET</span></button>";
 
-        html += "</div>";
+        html += "</div>"; // Chiude bottom-nav
 
         // CODICE JAVASCRIPT LATO CLIENT CON PAGE VISIBILITY API AUTOMATICO
         html += "<script>";
         html += "let globalStatus = '" + syncStatus + "';";
 
-        // Funzione per accendere/spegnere ciano neon ed espandere le partite
+        // Tocco unificato (Accendi/Apri e Spegni/Chiudi)
         html += "async function toggleLeague(code) {";
         html += "  const card = document.getElementById('card-' + code);";
         html += "  const el = document.getElementById('content-' + code);";
@@ -346,7 +369,7 @@ export default {
         html += "  }";
         html += "}";
 
-        // Tasto ALL
+        // Funzione per il pulsante ALL (Spegne tutte o accende tutte le card)
         html += "function toggleAll() {";
         html += "  const cards = document.querySelectorAll('.league-item');";
         html += "  const allSelected = Array.from(cards).every(c => c.classList.contains('selected'));";
@@ -367,13 +390,13 @@ export default {
         html += "  }";
         html += "}";
 
-        // Tasto NITRO (Toggle manuale)
+        // Funzione per il pulsante NITRO (Toggle classe attivo)
         html += "function toggleNitro() {";
         html += "  const btn = document.getElementById('btn-nitro');";
         html += "  btn.classList.toggle('nitro-active');";
         html += "}";
 
-        // Avvio Sincronizzazione asincrona con parametri d'indirizzo (Query Params) per evitare blocchi mobili
+        // Funzione per avviare la Sincronizzazione via AJAX delle sole card accese di Ciano
         html += "async function startSync() {";
         html += "  if (globalStatus === 'running') return;";
         const selectedCards = "document.querySelectorAll('.league-item.selected')";
@@ -384,12 +407,13 @@ export default {
         html += "  }";
         
         html += "  const nitroActive = document.getElementById('btn-nitro').classList.contains('nitro-active') ? '1' : '0';";
+        
         html += "  document.getElementById('btn-start').disabled = true;";
         html += "  document.getElementById('btn-reset').disabled = true;";
         html += "  document.getElementById('sync-msg').style.display = 'block';";
         html += "  document.getElementById('sync-msg').innerText = 'Sincronizzazione avviata in background...';";
         
-        // Invio diretto dei parametri in GET/POST Query senza form-data pesante
+        // Invio diretto dei parametri in GET/POST Query senza form-data pesante (Superamento del Bug dello Smartphone)
         html += "  await fetch('/sync?leagues=' + selected.join(',') + '&nitro=' + nitroActive, { method: 'POST' });";
         html += "  updateStatus();";
         html += "}";
@@ -449,7 +473,7 @@ export default {
         html += "    } else {";
         html += "      if (" + elBtnStart + ") " + elBtnStart + ".disabled = false;";
         html += "      if (" + elBtnReset + ") " + elBtnReset + ".disabled = false;";
-        html += "      document.getElementById('sync-msg').style.display = 'none';";
+        html += "      if (" + elMsg + ") " + elMsg + ".style.display = 'none';";
         html += "    }";
 
         html += "    if (data.error) {";
@@ -540,7 +564,7 @@ export default {
   }
 };
 
-// COMPITO IN BACKGROUND COMPLETAMENTE INTERATTIVO CON INTEGRATE LE PAUSE E IL NITRO DINAMICO
+// COMPITO IN BACKGROUND COMPLETAMENTE INTERATTIVO CON INTEGRAZIONE PAUSA E NITRO DINAMICO
 async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues) {
   try {
     let totaleInserite = 0;
@@ -552,11 +576,6 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues) {
       const divCode = selectedLeagues[i];
       const slug = MATCHESIO_SLUGS[divCode];
 
-      if (!slug) {
-        console.log("Nessuno slug Matchesio trovato per il codice " + divCode);
-        continue;
-      }
-
       // CONTROLLO ATTIVO DELLA PAUSA AD ODNI STEP
       const statusCheck = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
       if (statusCheck && (statusCheck.value === "paused" || statusCheck.value === "idle")) {
@@ -564,20 +583,40 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues) {
         break;
       }
 
+      // Se non abbiamo mappato lo slug per questa lega, saltiamo per evitare il 0.0% fisso
+      if (!slug) {
+        console.log("Nessuno slug Matchesio trovato per il codice " + divCode);
+        continue;
+      }
+
       // Imposta lo stato della lega corrente su "syncing" (Giallo 🟡)
       await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'syncing')").bind(divCode).run();
 
-      const urlExport = "https://www.matchesio.com/competition/" + slug + "/export/json";
-      
-      const apiResponse = await fetch(urlExport, {
-        method: "GET",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-      });
+      let apiResponse = null;
+      let successSlug = null;
 
-      if (!apiResponse.ok) {
+      // PROBING AUTOMATICO DEI 3 CANDIDATI (Risolve il problema dei finti 404)
+      for (let c = 0; c < slug.length; c++) {
+        const currentSlug = slug[c];
+        const urlExport = "https://www.matchesio.com/competition/" + currentSlug + "/export/json";
+        
+        apiResponse = await fetch(urlExport, {
+          method: "GET",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          }
+        });
+
+        if (apiResponse.ok) {
+          successSlug = currentSlug;
+          break; // Abbiamo trovato l'indirizzo funzionante!
+        }
+      }
+
+      if (!apiResponse || !apiResponse.ok) {
         console.log("Errore scaricamento calendario da Matchesio per " + divCode);
+        // Segniamo come fallito (rosso 🔴) se nessuno dei 3 link funziona
+        await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'pending')").bind(divCode).run();
         continue;
       }
 
