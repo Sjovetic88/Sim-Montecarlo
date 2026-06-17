@@ -43,9 +43,8 @@ export default {
     const url = new URL(request.url);
     const dbArchivio = env.DB_ARCHIVIO;
     const dbSoglie = env.DB_SOGLIE;
-    const apiKey = env.API_FOOTBALL_KEY || "a045158f354f22a763d193b99f52ae48";
 
-    // 1. ROTTA PARTITE ON-DEMAND (Accordion integrato nella grafica scura)
+    // 1. ROTTA PARTITE ON-DEMAND (Accordion dettagliato integrato nella grafica scura)
     if (url.pathname === "/matches") {
       const leagueDiv = url.searchParams.get("league");
       if (!leagueDiv) {
@@ -57,7 +56,7 @@ export default {
         ).bind(leagueDiv).all();
 
         if (!matches.results || matches.results.length === 0) {
-          return new Response("<p style='color: #94a3b8; padding: 10px; margin: 0;'>Nessuna partita salvata per questo campionato.</p>", {
+          return new Response("<p style='color: #94a3b8; padding: 10px; margin: 0;'>Nessuna partita scaricata per questa lega.</p>", {
             headers: { "Content-Type": "text/html; charset=utf-8" }
           });
         }
@@ -89,18 +88,20 @@ export default {
       }
     }
 
-    // 2. ROTTA DI STATO JSON (Per il Long Polling)
+    // 2. ROTTA DI STATO JSON (Per il Long Polling della dashboard)
     if (url.pathname === "/status") {
       try {
         const lastSyncRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'last_sync'").first();
         const statusRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
         const errorRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'error'").first();
         const seasonRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'current_season'").first();
+        const nitroRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'nitro_mode'").first();
 
         const lastSync = lastSyncRes ? lastSyncRes.value : "MAI AGGIORNATO";
         const syncStatus = statusRes ? statusRes.value : "idle";
         const syncError = errorRes ? errorRes.value : null;
         const currentSeason = seasonRes ? seasonRes.value : "N.D.";
+        const nitroMode = nitroRes ? nitroRes.value : "1";
 
         const leagueStates = await dbSoglie.prepare("SELECT metric, value FROM api_status WHERE metric LIKE 'sync_league_%'").all();
         const statesMap = {};
@@ -121,6 +122,7 @@ export default {
           error: syncError,
           totale: totalePartite,
           season: currentSeason,
+          nitro: nitroMode,
           leagues: statesMap
         };
 
@@ -132,7 +134,21 @@ export default {
       }
     }
 
-    // 3. ROTTA POST /pause (Segnale di interruzione)
+    // 3. ROTTA POST /mode (Rilevamento stato schermo On/Off)
+    if (url.pathname === "/mode" && request.method === "POST") {
+      try {
+        const state = url.searchParams.get("state");
+        const val = state === "visible" ? "1" : "0";
+        await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('nitro_mode', ?)").bind(val).run();
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+      }
+    }
+
+    // 4. ROTTA POST /pause (Segnale di interruzione asincrono)
     if (url.pathname === "/pause" && request.method === "POST") {
       try {
         await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'paused')").run();
@@ -144,7 +160,7 @@ export default {
       }
     }
 
-    // 4. ROTTA POST /reset (Svuotamento completo del database)
+    // 5. ROTTA POST /reset (Svuotamento completo del database)
     if (url.pathname === "/reset" && request.method === "POST") {
       try {
         const resetStatements = [
@@ -165,18 +181,20 @@ export default {
       }
     }
 
-    // 5. ROTTA PRINCIPALE (DASHBOARD - Grafica identica al tuo Screenshot)
+    // 6. ROTTA PRINCIPALE (DASHBOARD)
     if (url.pathname === "/") {
       try {
         const statusRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
         const lastSyncRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'last_sync'").first();
         const errorRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'error'").first();
         const seasonRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'current_season'").first();
+        const nitroRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'nitro_mode'").first();
         
         const lastSync = lastSyncRes ? lastSyncRes.value : "MAI AGGIORNATO";
         const syncStatus = statusRes ? statusRes.value : "idle";
         const syncError = errorRes ? errorRes.value : null;
         const currentSeason = seasonRes ? seasonRes.value : "N.D.";
+        const nitroMode = nitroRes ? nitroRes.value : "1";
 
         const leghe = await dbArchivio.prepare("SELECT div FROM regole_leghe WHERE api_id > 0").all();
         const listaLeghe = leghe.results || [];
@@ -200,8 +218,6 @@ export default {
         
         html += ".league-item { background: #0f172a; border: 1px solid #1e293b; margin-bottom: 14px; padding: 16px; border-radius: 8px; cursor: pointer; transition: background 0.2s, border-color 0.2s, box-shadow 0.2s; position: relative; }";
         html += ".league-item:hover { background: #1e293b; }";
-        
-        // MODIFICA 2: Bordo Ciano Neon quando la card è selezionata (ha classe .selected)
         html += ".league-item.selected { border-color: #00ebff !important; box-shadow: 0 0 10px rgba(0, 235, 255, 0.4); }";
         
         html += ".league-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 14px; letter-spacing: 0.5px; }";
@@ -214,7 +230,6 @@ export default {
         html += ".status-running-msg { text-align: center; color: #f59e0b; font-size: 13px; font-weight: bold; margin-bottom: 15px; }";
         html += ".error-box { background: #ef444422; border-left: 4px solid #ef4444; padding: 12px; margin-bottom: 20px; border-radius: 4px; color: #fca5a5; font-size: 13px; }";
         
-        // Tab Bar Inferiore fissa con i 5 pulsanti definitivi (ALL, START, PAUSA, NITRO, RESET)
         html += ".bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #090d16; border-top: 1px solid #1e293b; display: flex; justify-content: space-around; align-items: center; padding: 10px 0; z-index: 1000; box-shadow: 0 -4px 10px rgba(0,0,0,0.5); }";
         html += ".nav-btn { background: none; border: none; display: flex; flex-direction: column; align-items: center; color: #64748b; cursor: pointer; text-decoration: none; padding: 4px 10px; width: 20%; transition: color 0.2s, filter 0.2s; }";
         html += ".nav-btn-active { color: #00ebff !important; }";
@@ -222,14 +237,13 @@ export default {
         html += ".nav-icon { font-size: 20px; margin-bottom: 3px; }";
         html += ".nav-label { font-size: 8px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }";
         
-        // Stili Nitro e Stati di elaborazione
         html += ".nitro-active { color: #f97316 !important; filter: drop-shadow(0 0 8px rgba(249,115,22,0.6)); }";
         html += ".status-running { color: #f59e0b !important; }";
         html += "</style></head><body>";
         
         html += "<div class='container'>";
         
-        // Intestazione GOLDBET MONTECARLO
+        // Titolo GOLDBET MONTECARLO
         html += "<div class='header-title'><span class='white'>GOLDBET</span> <span class='neon'>MONTECARLO</span></div>";
         html += "<div class='subtitle-stats'><span id='stat-totale' class='neon'>" + totalePartite + "</span> PARTITE SALVATE | STAGIONE <span id='stat-season' class='neon'>" + currentSeason + "</span></div>";
         html += "<div class='subtitle-time'>ULTIMO AGGIORNAMENTO <span id='stat-last-sync'>" + lastSync + "</span></div>";
@@ -246,7 +260,7 @@ export default {
           html += "<div id='error-box' class='error-box' style='display:none;'></div>";
         }
 
-        // Elenco campionati (Spuntati di default con classe .selected)
+        // Elenco campionati (Selezionati all'avvio con bordo Ciano Neon)
         html += "<div class='league-list'>";
         
         for (let i = 0; i < listaLeghe.length; i++) {
@@ -269,7 +283,7 @@ export default {
           const lastMatchRes = await dbSoglie.prepare("SELECT MAX(event_date) as ultima FROM calendario_partite WHERE league_div = ?").bind(code).first();
           const ultimaData = lastMatchRes && lastMatchRes.ultima ? new Date(lastMatchRes.ultima).toLocaleDateString("it-IT", { year: "numeric", month: "2-digit", day: "2-digit" }) : "N.D.";
 
-          // MODIFICA 2: Card con classe .selected attiva all'avvio e funzione onclick diretta
+          // Tocco unificato (Seleziona + Apri Accordion)
           html += "<div class='league-item selected' id='card-" + code + "' onclick='toggleLeague(\"" + code + "\")'>";
           html += "<div class='league-header'>";
           html += "<span class='title'><span>" + flag + "</span> " + fullLabel + "</span>";
@@ -284,33 +298,34 @@ export default {
           html += "</div>";
         }
         html += "</div>";
-        html += "</div>"; // Chiude container
+        html += "</div>";
 
-        // Tab Bar Inferiore fissa con i 5 pulsanti, completamente asincroni (senza form)
+        // Tab Bar Inferiore (ALL, START, PAUSA, NITRO, RESET)
         html += "<div class='bottom-nav'>";
         
-        // 1. ALL (Seleziona/Deseleziona tutto)
+        // 1. ALL
         html += "<button onclick='toggleAll()' class='nav-btn nav-btn-active'><span class='nav-icon'>☑️</span><span class='nav-label'>ALL</span></button>";
         
-        // 2. START (Avvia solo le leghe selezionate via AJAX)
+        // 2. START
         html += "<button id='btn-start' onclick='startSync()' class='nav-btn' style='color: #10b981;'><span class='nav-icon'>▶️</span><span class='nav-label'>START</span></button>";
 
-        // 3. PAUSA (Ferma il download via AJAX)
+        // 3. PAUSA
         html += "<button id='btn-pause' onclick='triggerPause()' class='nav-btn' style='color: #f59e0b;'><span class='nav-icon'>⏸️</span><span class='nav-label'>PAUSA</span></button>";
         
-        // 4. NITRO (Interruttore velocità via JS)
-        html += "<button id='btn-nitro' onclick='toggleNitro()' class='nav-btn'><span class='nav-icon'>🔥</span><span class='nav-label'>NITRO</span></button>";
+        // 4. NITRO (La fiammella si illuminerà in arancione dinamico tramite JS in base allo schermo)
+        const isNitroActive = nitroMode === "1" ? "nitro-active" : "";
+        html += "<button id='btn-nitro' onclick='toggleNitro()' class='nav-btn " + isNitroActive + "'><span class='nav-icon'>🔥</span><span class='nav-label'>NITRO</span></button>";
         
-        // 5. RESET (Svuota tutto via AJAX)
+        // 5. RESET
         html += "<button id='btn-reset' onclick='triggerReset()' class='nav-btn' style='color: #ef4444;'><span class='nav-icon'>⛔</span><span class='nav-label'>RESET</span></button>";
 
-        html += "</div>"; // Chiude bottom-nav
+        html += "</div>";
 
-        // CODICE JAVASCRIPT LATO CLIENT (Gestisce l'interfaccia interattiva dell'utente senza ricaricamento)
+        // CODICE JAVASCRIPT LATO CLIENT CON PAGE VISIBILITY API AUTOMATICO
         html += "<script>";
         html += "let globalStatus = '" + syncStatus + "';";
 
-        // MODIFICA 2: Tocco unificato (Accendi/Apri e Spegni/Chiudi)
+        // Funzione per accendere/spegnere ciano neon ed espandere le partite
         html += "async function toggleLeague(code) {";
         html += "  const card = document.getElementById('card-' + code);";
         html += "  const el = document.getElementById('content-' + code);";
@@ -326,7 +341,7 @@ export default {
         html += "  }";
         html += "}";
 
-        // Funzione per il pulsante ALL (Spegne tutte o accende tutte le card)
+        // Tasto ALL
         html += "function toggleAll() {";
         html += "  const cards = document.querySelectorAll('.league-item');";
         html += "  const allSelected = Array.from(cards).every(c => c.classList.contains('selected'));";
@@ -347,72 +362,89 @@ export default {
         html += "  }";
         html += "}";
 
-        // Funzione per il pulsante NITRO
+        // Tasto NITRO (Toggle manuale)
         html += "function toggleNitro() {";
         html += "  const btn = document.getElementById('btn-nitro');";
         html += "  btn.classList.toggle('nitro-active');";
         html += "}";
 
-        // Funzione per avviare la Sincronizzazione via AJAX delle sole card accese di Ciano
+        // Avvio Sincronizzazione asincrona con parametri d'indirizzo (Query Params) per evitare blocchi mobili
         html += "async function startSync() {";
         html += "  if (globalStatus === 'running') return;";
-        html += "  const selectedCards = document.querySelectorAll('.league-item.selected');";
-        html += "  if (selectedCards.length === 0) {";
+        const selectedCards = "document.querySelectorAll('.league-item.selected')";
+        html += "  const selected = Array.from(" + selectedCards + ").map(c => c.id.replace('card-', ''));";
+        html += "  if (selected.length === 0) {";
         html += "    alert('Tocca almeno un campionato per accenderlo di ciano prima di avviare!');";
         html += "    return;";
         html += "  }";
         
-        html += "  const selectedCodes = Array.from(selectedCards).map(c => c.id.replace('card-', '')).join(',');";
         html += "  const nitroActive = document.getElementById('btn-nitro').classList.contains('nitro-active') ? '1' : '0';";
-        
         html += "  document.getElementById('btn-start').disabled = true;";
         html += "  document.getElementById('btn-reset').disabled = true;";
         html += "  document.getElementById('sync-msg').style.display = 'block';";
         html += "  document.getElementById('sync-msg').innerText = 'Sincronizzazione avviata in background...';";
         
-        html += "  const formData = new FormData();";
-        html += "  formData.append('leagues', selectedCodes);";
-        html += "  formData.append('nitro', nitroActive);";
-        
-        html += "  await fetch('/sync', { method: 'POST', body: formData });";
+        // Invio diretto dei parametri in GET/POST Query senza form-data pesante
+        html += "  await fetch('/sync?leagues=' + selected.join(',') + '&nitro=' + nitroActive, { method: 'POST' });";
         html += "  updateStatus();";
         html += "}";
 
-        // Funzione per inviare il segnale di PAUSA via AJAX
+        // Pausa asincrona via AJAX
         html += "async function triggerPause() {";
         html += "  const msgEl = document.getElementById('sync-msg');";
-        html += "  if (msgEl) { msgEl.innerText = 'Pausa richiesta... attesa completamento del download corrente.'; }";
+        html += "  if (msgEl) { msgEl.innerText = 'Pausa richiesta... attesa completamento download corrente.'; }";
         html += "  await fetch('/pause', { method: 'POST' });";
         html += "  updateStatus();";
         html += "}";
 
-        // Funzione per il RESET completo del database via AJAX
+        // Reset completo asincrono via AJAX
         html += "async function triggerReset() {";
-        html += "  if (!confirm('Sei sicuro di voler cancellare e resettare TUTTE le partite salvate?')) return;";
+        html += "  if (!confirm('Sei sicuro di voler resettare interamente il database del calendario?')) return;";
         html += "  await fetch('/reset', { method: 'POST' });";
         html += "  updateStatus();";
         html += "}";
 
-        // Funzione di aggiornamento in tempo reale (Long Polling)
+        // AUTOMAZIONE SCHERMO ACCESO/SPENTO (Page Visibility API)
+        // Rileva lo spegnimento dello schermo o il blocco telefono in tempo reale
+        html += "document.addEventListener('visibilitychange', async function() {";
+        html += "  const state = document.visibilityState;"; // 'visible' o 'hidden'
+        html += "  await fetch('/mode?state=' + state, { method: 'POST' });";
+        html += "});";
+
+        // Long Polling per l'aggiornamento automatico della pagina senza ricarica
         html += "async function updateStatus() {";
         html += "  try {";
         html += "    const r = await fetch('/status');";
         html += "    if (!r.ok) return;";
         html += "    const data = await r.json();";
         html += "    globalStatus = data.status;";
-        html += "    document.getElementById('stat-last-sync').innerText = data.lastSync;";
-        html += "    document.getElementById('stat-totale').innerText = data.totale;";
-        html += "    document.getElementById('stat-season').innerText = data.season;";
+        
+        const elLastSync = "document.getElementById('stat-last-sync')";
+        const elTotale = "document.getElementById('stat-totale')";
+        const elSeason = "document.getElementById('stat-season')";
+        const elMsg = "document.getElementById('sync-msg')";
+        const elBtnStart = "document.getElementById('btn-start')";
+        const elBtnReset = "document.getElementById('btn-reset')";
+        const elBtnNitro = "document.getElementById('btn-nitro')";
+        
+        html += "    if (" + elLastSync + ") " + elLastSync + ".innerText = data.lastSync;";
+        html += "    if (" + elTotale + ") " + elTotale + ".innerText = data.totale;";
+        html += "    if (" + elSeason + ") " + elSeason + ".innerText = data.season;";
+        
+        // Sincronizza l'icona NITRO in base allo stato del database/schermo
+        html += "    if (" + elBtnNitro + ") {";
+        html += "      if (data.nitro === '1') " + elBtnNitro + ".classList.add('nitro-active');";
+        html += "      else " + elBtnNitro + ".classList.remove('nitro-active');";
+        html += "    }";
         
         html += "    if (data.status === 'running') {";
-        html += "      document.getElementById('btn-start').disabled = true;";
-        html += "      document.getElementById('btn-reset').disabled = true;";
-        html += "      document.getElementById('sync-msg').style.display = 'block';";
-        html += "      document.getElementById('sync-msg').innerText = 'Sincronizzazione attiva in background.';";
+        html += "      if (" + elBtnStart + ") " + elBtnStart + ".disabled = true;";
+        html += "      if (" + elBtnReset + ") " + elBtnReset + ".disabled = true;";
+        html += "      if (" + elMsg + ") { " + elMsg + ".style.display = 'block'; " + elMsg + ".innerText = 'Sincronizzazione attiva in background.'; }";
         html += "    } else {";
-        html += "      document.getElementById('btn-start').disabled = false;";
-        html += "      document.getElementById('btn-reset').disabled = false;";
-        html += "      document.getElementById('sync-msg').style.display = 'none';";
+        html += "      if (" + elBtnStart + ") " + elBtnStart + ".disabled = false;";
+        html += "      if (" + elBtnReset + ") " + elBtnReset + ".disabled = false;";
+        html += "      if (" + elMsg + ") " + elMsg + ".style.display = 'none';";
         html += "    }";
 
         html += "    if (data.error) {";
@@ -453,25 +485,69 @@ export default {
       }
     }
 
+    // 7. ROTTA POST /sync (RICEZIONE SELEZIONE E AVVIO BACKGROUND)
+    if (url.pathname === "/sync" && request.method === "POST") {
+      try {
+        const statusCheck = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
+        if (statusCheck && statusCheck.value === "running") {
+          return new Response(JSON.stringify({ error: "Sincronizzazione gia in corso" }), { status: 400 });
+        }
+
+        // Recuperiamo i parametri direttamente dall'URL per una trasmissione 100% immune ai bug dei cellulari
+        const leaguesStr = url.searchParams.get("leagues");
+        const nitroStr = url.searchParams.get("nitro") || "0";
+
+        if (!leaguesStr) {
+          return new Response(JSON.stringify({ error: "Nessun campionato selezionato" }), { status: 400 });
+        }
+
+        const listLeagues = leaguesStr.split(",");
+
+        const resetStatements = [
+          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'running')"),
+          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', NULL)"),
+          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('nitro_mode', ?)").bind(nitroStr)
+        ];
+
+        for (let i = 0; i < listLeagues.length; i++) {
+          resetStatements.push(
+            dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'pending')").bind(listLeagues[i])
+          );
+        }
+
+        await dbSoglie.batch(resetStatements);
+
+        // Avvio asincrono in background
+        ctx.waitUntil(
+          runBackgroundSync(dbArchivio, dbSoglie, listLeagues)
+        );
+
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { "Content-Type": "application/json" }
+        });
+
+      } catch (err) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+      }
+    }
+
     return new Response("Risorsa non trovata", { status: 404 });
   }
 };
 
-// COMPITO IN BACKGROUND TOTALMENTE INTERATTIVO CON PAUSA E NITRO DINAMICI
-async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, nitroMode) {
+// COMPITO IN BACKGROUND COMPLETAMENTE INTERATTIVO CON INTEGRAZIONE PAUSA E NITRO DINAMICO
+async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues) {
   try {
     let totaleInserite = 0;
     let rilevataStagione = "N.D.";
     
-    // Regolazione dinamica della velocità basata sull'interruttore NITRO
-    const delayTime = nitroMode === "1" ? 1200 : 10000;
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     for (let i = 0; i < selectedLeagues.length; i++) {
       const divCode = selectedLeagues[i];
       const slug = MATCHESIO_SLUGS[divCode];
 
-      // CONTROLLO ATTIVO DELLA PAUSA AD OGNI CAMBIAMENTO DI CAMPIONATO
+      // CONTROLLO ATTIVO DELLA PAUSA AD OGNI STEP
       const statusCheck = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
       if (statusCheck && (statusCheck.value === "paused" || statusCheck.value === "idle")) {
         console.log("Processo interrotto o messo in pausa dall'utente.");
@@ -556,7 +632,12 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, nitroMod
       // Imposta lo stato della lega su "completed" (Verde 🟢)
       await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'completed')").bind(divCode).run();
 
-      // Pausa di sicurezza con tempo dinamico (10s Normal / 1.2s Nitro)
+      // REGOLAZIONE DINAMICA DELLA VELOCITÀ LEGGENDO IL DATABASE AD OGNI INTERVALLO
+      // In questo modo, se lo schermo si è spento, cambierà istantaneamente il tempo di delay a 10s
+      const nitroRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'nitro_mode'").first();
+      const currentNitro = nitroRes ? nitroRes.value : "1";
+      const delayTime = currentNitro === "1" ? 1200 : 10000;
+
       if (i < selectedLeagues.length - 1) {
         await delay(delayTime); 
       }
