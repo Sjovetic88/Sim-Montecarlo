@@ -1,26 +1,11 @@
-// DIZIONARIO EMOTICON BANDIERE
-const LEAGUE_FLAGS = {
-  "ARG": "🇦🇷", "B1": "🇧🇪", "BRA": "🇧🇷", "CHN": "🇨🇳", "D1": "🇩🇪", "D2": "🇩🇪",
-  "DNK": "🇩🇰", "IRL": "🇮🇪", "MEX": "🇲🇽", "NOR": "🇳🇴", "P1": "🇵🇹", "RUS": "🇷🇺",
-  "SWE": "🇸🇪", "T1": "🇹🇷", "USA": "🇺🇸", "E0": "🇬🇧", "E1": "🇬🇧", "I1": "🇮🇹",
-  "I2": "🇮🇹", "SP1": "🇪🇸", "F1": "🇫🇷", "N1": "🇳🇱", "G1": "🇬🇷", "AUT": "🇦🇹", "SWZ": "🇨🇭"
-};
-
-const LEAGUE_NAMES = {
-  "ARG": "ARGENTINA", "B1": "BELGIUM", "BRA": "BRAZIL", "CHN": "CHINA", "D1": "GERMANY",
-  "D2": "GERMANY D2", "DNK": "DENMARK", "IRL": "IRELAND", "MEX": "MEXICO", "NOR": "NORWAY",
-  "P1": "PORTUGAL", "RUS": "RUSSIA", "SWE": "SWEDEN", "T1": "TURKEY", "USA": "USA",
-  "E0": "ENGLAND PREMIER", "E1": "ENGLAND CHAMPIONSHIP", "I1": "ITALY SERIE A",
-  "I2": "ITALY SERIE B", "SP1": "SPAIN LA LIGA", "F1": "FRANCE LIGUE 1", "N1": "NETHERLANDS EREDIVISIE"
-};
-
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const dbArchivio = env.DB_ARCHIVIO;
     const dbSoglie = env.DB_SOGLIE;
+    const apiKey = env.API_FOOTBALL_KEY || "a045158f354f22a763d193b99f52ae48";
 
-    // 1. ROTTA PARTITE ON-DEMAND (Accordion dettagliato)
+    // 1. ROTTA PARTITE ON-DEMAND (Accordion dettagliato con anno inserito nella data)
     if (url.pathname === "/matches") {
       const leagueDiv = url.searchParams.get("league");
       if (!leagueDiv) {
@@ -32,7 +17,7 @@ export default {
         ).bind(leagueDiv).all();
 
         if (!matches.results || matches.results.length === 0) {
-          return new Response("<p style='color: #94a3b8; padding: 10px; margin: 0;'>Nessuna partita scaricata per questa lega.</p>", {
+          return new Response("<p style='color: #94a3b8; padding: 10px; margin: 0;'>Nessuna partita salvata per questo campionato.</p>", {
             headers: { "Content-Type": "text/html; charset=utf-8" }
           });
         }
@@ -64,7 +49,7 @@ export default {
       }
     }
 
-    // 2. ROTTA DI STATO JSON (Per il Long Polling)
+    // 2. ROTTA DI STATO JSON (Per il Long Polling della dashboard)
     if (url.pathname === "/status") {
       try {
         const lastSyncRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'last_sync'").first();
@@ -124,7 +109,7 @@ export default {
       }
     }
 
-    // 4. ROTTA POST /pause (Segnale di interruzione)
+    // 4. ROTTA POST /pause (Segnale di interruzione asincrono)
     if (url.pathname === "/pause" && request.method === "POST") {
       try {
         await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'paused')").run();
@@ -157,7 +142,7 @@ export default {
       }
     }
 
-    // 6. ROTTA PRINCIPALE (DASHBOARD)
+    // 6. ROTTA PRINCIPALE (DASHBOARD - Grafica identica al tuo Screenshot)
     if (url.pathname === "/") {
       try {
         const statusRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
@@ -173,7 +158,6 @@ export default {
         const nitroMode = nitroRes ? nitroRes.value : "1";
 
         // Estrazione di TUTTI i campionati (attivi e inattivi) ordinati alfabeticamente per codice ID (id ASC)
-        // MODIFICA 1: Rimosso is_active=1 per scaricare la lista completa
         const leghe = await dbArchivio.prepare("SELECT id, name, emoji, is_active FROM leagues ORDER BY id ASC").all();
         const listaLeghe = leghe.results || [];
 
@@ -200,8 +184,8 @@ export default {
         // Bordo Ciano Neon per la card selezionata
         html += ".league-item.selected { border-color: #00ebff !important; box-shadow: 0 0 10px rgba(0, 235, 255, 0.4); }";
         
-        // Stile per i campionati inattivi
-        html += ".league-item.inactive { opacity: 0.45; cursor: not-allowed; border-color: #0f172a; }";
+        // Stile per i campionati inattivi (locked)
+        html += ".league-item.inactive { opacity: 0.35; cursor: not-allowed; border-color: #0f172a; }";
         html += ".league-item.inactive:hover { background: #0f172a; }";
         
         html += ".league-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 14px; letter-spacing: 0.5px; }";
@@ -215,6 +199,7 @@ export default {
         html += ".status-running-msg { text-align: center; color: #f59e0b; font-size: 13px; font-weight: bold; margin-bottom: 15px; }";
         html += ".error-box { background: #ef444422; border-left: 4px solid #ef4444; padding: 12px; margin-bottom: 20px; border-radius: 4px; color: #fca5a5; font-size: 13px; }";
         
+        // Tab Bar Inferiore fissa con i 5 pulsanti, completamente asincroni
         html += ".bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #090d16; border-top: 1px solid #1e293b; display: flex; justify-content: space-around; align-items: center; padding: 10px 0; z-index: 1000; box-shadow: 0 -4px 10px rgba(0,0,0,0.5); }";
         html += ".nav-btn { background: none; border: none; display: flex; flex-direction: column; align-items: center; color: #64748b; cursor: pointer; text-decoration: none; padding: 4px 10px; width: 20%; transition: color 0.2s, filter 0.2s; }";
         html += ".nav-btn-active { color: #00ebff !important; }";
@@ -245,7 +230,7 @@ export default {
           html += "<div id='error-box' class='error-box' style='display:none;'></div>";
         }
 
-        // Elenco campionati (MODIFICA 3: Tutti deselezionati e spenti all'avvio)
+        // Elenco campionati (TUTTI DESELEZIONATI all'avvio)
         html += "<div class='league-list'>";
         
         for (let i = 0; i < listaLeghe.length; i++) {
@@ -263,7 +248,6 @@ export default {
             pct = "100.0%";
           }
 
-          // MODIFICA 4: Rimossa emoticon pallone ⚽ di fallback
           const flag = l.emoji || "";
           const fullLabel = code + " " + l.name;
 
@@ -275,14 +259,14 @@ export default {
             html += "<div class='league-item inactive' id='card-" + code + "'>";
             html += "<div class='league-header'>";
             html += "<span class='title'><span>" + flag + "</span> " + fullLabel + "</span>";
-            html += "<span class='lock'>⛔</span>"; // MODIFICA 1: Emoji di bloccato per i disattivi
+            html += "<span class='lock'>⛔</span>";
             html += "</div>";
             html += "<div class='league-sub'>";
             html += "<span>⚠️</span> <span>Campionato non abilitato dal Legislatore</span>";
             html += "</div>";
             html += "</div>";
           } else {
-            // Se attivo, impostiamo onclick e comportamento standard (Spento di default all'avvio)
+            // Se attivo, impostiamo comportamento standard (Deselezionato all'avvio)
             html += "<div class='league-item' id='card-" + code + "' onclick='toggleLeague(\"" + code + "\")' data-active='1'>";
             html += "<div class='league-header'>";
             html += "<span class='title'><span>" + flag + "</span> " + fullLabel + "</span>";
@@ -347,7 +331,6 @@ export default {
         html += "    } else {";
         html += "      if (!card.classList.contains('selected')) {";
         html += "        card.classList.add('selected');";
-        // NON carichiamo tutte le partite insieme per evitare di rallentare lo schermo del telefono
         html += "      }";
         html += "    }";
         html += "  }";
@@ -359,6 +342,7 @@ export default {
         html += "}";
 
         // Avvio Sincronizzazione asincrona dei soli campionati selezionati (Ciano Neon)
+        // Utilizziamo unicamente le Query di indirizzo per evitare qualsiasi problema sui browser degli smartphone
         html += "async function startSync() {";
         html += "  if (globalStatus === 'running') return;";
         const selectedCards = "document.querySelectorAll('.league-item.selected[data-active=\"1\"]')";
@@ -374,10 +358,12 @@ export default {
         html += "  document.getElementById('sync-msg').style.display = 'block';";
         html += "  document.getElementById('sync-msg').innerText = 'Sincronizzazione avviata in background...';";
         
-        html += "  await fetch('/sync?leagues=' + selected.join(',') + '&nitro=' + nitroActive, { method: 'POST' });";
+        // Passaggio diretto dei dati nell'indirizzo (Query String) - 100% immune ai bug mobili e con parametro start=1
+        html += "  await fetch('/sync?leagues=' + selected.join(',') + '&nitro=' + nitroActive + '&start=1', { method: 'POST' });";
         html += "  updateStatus();";
         html += "}";
 
+        // Pausa asincrona via AJAX
         html += "async function triggerPause() {";
         html += "  const msgEl = document.getElementById('sync-msg');";
         html += "  if (msgEl) { msgEl.innerText = 'Pausa richiesta... attesa completamento download corrente.'; }";
@@ -385,6 +371,7 @@ export default {
         html += "  updateStatus();";
         html += "}";
 
+        // Reset completo asincrono via AJAX
         html += "async function triggerReset() {";
         html += "  if (!confirm('Sei sicuro di voler resettare interamente il database del calendario?')) return;";
         html += "  await fetch('/reset', { method: 'POST' });";
@@ -445,7 +432,6 @@ export default {
         html += "      if (pctEl) {";
         html += "        if (val === 'syncing') {";
         html += "          pctEl.innerText = 'SYNCING';";
-        // Solo per le card selezionate cambiamo il messaggio di sub-testo
         const cardHasSelected = "document.getElementById('card-' + code).classList.contains('selected')";
         html += "          if (subEl && " + cardHasSelected + ") subEl.innerText = 'Download del calendario in corso...';";
         html += "        } else if (val === 'completed') {";
@@ -472,11 +458,14 @@ export default {
       }
     }
 
-    // 7. ROTTA POST /sync (RICEZIONE SELEZIONE E AVVIO BACKGROUND)
+    // 7. ROTTA POST /sync (RICEZIONE SELEZIONE E AVVIO BACKGROUND CON SUPPORTO CATENA BATCH)
     if (url.pathname === "/sync" && request.method === "POST") {
       try {
         const statusCheck = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
-        if (statusCheck && statusCheck.value === "running") {
+        
+        // Se la sincronizzazione è già in corso e NON è una chiamata a catena (manca start=1), rifiutiamo
+        const isStart = url.searchParams.get("start") === "1";
+        if (statusCheck && statusCheck.value === "running" && isStart) {
           return new Response(JSON.stringify({ error: "Sincronizzazione gia in corso" }), { status: 400 });
         }
 
@@ -489,23 +478,36 @@ export default {
 
         const listLeagues = leaguesStr.split(",");
 
-        const resetStatements = [
-          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'running')"),
-          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', NULL)"),
-          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('nitro_mode', ?)").bind(nitroStr)
-        ];
+        // LOGICA DI DIVISIONE IN GRUPPI (BATCHING DI 3 IN 3)
+        // Prendiamo le prime 3 leghe per questa esecuzione e teniamo da parte le rimanenti
+        const currentBatch = listLeagues.slice(0, 3);
+        const remainingLeagues = listLeagues.slice(3);
 
-        for (let i = 0; i < listLeagues.length; i++) {
-          resetStatements.push(
-            dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'pending')").bind(listLeagues[i])
-          );
+        const resetStatements = [];
+
+        // Se è l'avvio iniziale (start=1), impostiamo lo stato "running" globale e azzeriamo le leghe a "pending" [3]
+        if (isStart) {
+          resetStatements.push(dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'running')"));
+          resetStatements.push(dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', NULL)"));
+          resetStatements.push(dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('nitro_mode', ?)").bind(nitroStr));
+          
+          for (let i = 0; i < listLeagues.length; i++) {
+            resetStatements.push(
+              dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'pending')").bind(listLeagues[i])
+            );
+          }
         }
 
-        await dbSoglie.batch(resetStatements);
+        if (resetStatements.length > 0) {
+          await dbSoglie.batch(resetStatements);
+        }
 
-        // Avvio asincrono in background
+        // Calcoliamo l'URL di loop-back dinamico per chiamare se stessi in modo asincrono
+        const selfUrl = "https://" + url.host + "/sync";
+
+        // Avvio asincrono del batch corrente in background
         ctx.waitUntil(
-          runBackgroundSync(dbArchivio, dbSoglie, listLeagues)
+          runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLeagues, selfUrl)
         );
 
         return new Response(JSON.stringify({ success: true }), {
@@ -521,33 +523,41 @@ export default {
   }
 };
 
-// COMPITO IN BACKGROUND COMPLETAMENTE INTERATTIVO CON INTEGRAZIONE PAUSA E NITRO DINAMICO DA DATABASE
-async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues) {
+// COMPITO IN BACKGROUND INTERATTIVO CON INTEGRAZIONE CATENA (CHAINING) PER EVITARE LIMITI DI SUBREQUEST [3]
+async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLeagues, selfUrl) {
   try {
     let totaleInserite = 0;
     let rilevataStagione = "N.D.";
-    
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    for (let i = 0; i < selectedLeagues.length; i++) {
-      const divCode = selectedLeagues[i];
+    // Carichiamo TUTTI gli slug dal database D1 con un'unica query iniziale (1 query invece di N!)
+    // Questo abbatte drasticamente il numero di subrequest e protegge il tuo piano gratuito [3]
+    const allSlugs = await dbSoglie.prepare("SELECT metric, value FROM api_status WHERE metric LIKE 'slug_%'").all();
+    const slugMap = {};
+    if (allSlugs.results) {
+      for (let j = 0; j < allSlugs.results.length; j++) {
+        const r = allSlugs.results[j];
+        slugMap[r.metric.replace("slug_", "")] = r.value;
+      }
+    }
+
+    for (let i = 0; i < currentBatch.length; i++) {
+      const divCode = currentBatch[i];
+      const slugVal = slugMap[divCode];
 
       // CONTROLLO ATTIVO DELLA PAUSA AD OGNI STEP
       const statusCheck = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
       if (statusCheck && (statusCheck.value === "paused" || statusCheck.value === "idle")) {
         console.log("Processo interrotto o messo in pausa dall'utente.");
-        break;
+        return; 
       }
 
-      // MODIFICA 2: Estrazione dello slug della lega direttamente dal database 'soglie_campionati' (tabella api_status)
-      const slugRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'slug_' || ?").bind(divCode).first();
-      
-      if (!slugRes || !slugRes.value) {
+      if (!slugVal) {
         console.log("Nessuno slug Matchesio trovato in DB per " + divCode);
         continue;
       }
 
-      const slug = slugRes.value.split(",");
+      const slug = slugVal.split(",");
 
       // Imposta lo stato della lega corrente su "syncing" (Giallo 🟡)
       await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'syncing')").bind(divCode).run();
@@ -575,7 +585,6 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues) {
 
       if (!apiResponse || !apiResponse.ok) {
         console.log("Errore scaricamento calendario da Matchesio per " + divCode);
-        // Segniamo come fallito (rosso 🔴) se nessuno dei 3 link funziona
         await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'pending')").bind(divCode).run();
         continue;
       }
@@ -639,17 +648,29 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues) {
       const currentNitro = nitroRes ? nitroRes.value : "1";
       const delayTime = currentNitro === "1" ? 1200 : 10000;
 
-      if (i < selectedLeagues.length - 1) {
-        await delay(delayTime); 
+      // Pausa di sicurezza con tempo dinamico (10s Normal / 1.2s Nitro)
+      // Se stiamo per concatenare un altro viaggio, inseriamo una piccola pausa di 2 secondi tra i viaggi
+      if (i < currentBatch.length - 1 || remainingLeagues.length > 0) {
+        const delayMs = (i < currentBatch.length - 1) ? delayTime : 2000;
+        await delay(delayMs); 
       }
     }
 
-    const adesso = new Date().toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    await dbSoglie.batch([
-      dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', ?)").bind(adesso),
-      dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('current_season', ?)").bind(rilevataStagione),
-      dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'idle')")
-    ]);
+    // SCELTA CRUCIALE DI CATENA (CHAINING)
+    // Se ci sono ancora campionati da scaricare, facciamo una chiamata ricorsiva asincrona a noi stessi [3]
+    // Questo avvierà una NUOVA invocazione del Worker con un budget di subrequest fresco e pulito (risolve l'errore 50 subrequest limit) [3]
+    if (remainingLeagues.length > 0) {
+      const nextUrl = selfUrl + "?leagues=" + remainingLeagues.join(",");
+      await fetch(nextUrl, { method: "POST" });
+    } else {
+      // Se abbiamo finito l'ultimo gruppo di campionati, riportiamo lo stato globale a "idle" e salviamo la data
+      const adesso = new Date().toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      await dbSoglie.batch([
+        dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', ?)").bind(adesso),
+        dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('current_season', ?)").bind(rilevataStagione),
+        dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'idle')")
+      ]);
+    }
 
   } catch (err) {
     console.error("Errore background sync: " + err.message);
