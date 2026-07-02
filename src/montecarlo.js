@@ -13,7 +13,7 @@ const MATCHESIO_SLUGS = {
   "SC2": "league-one-gb-sct", "SC3": "league-two-gb-sct"
 };
 
-// DIZIONARIO BANDIERE E NOMI CAMPIONATI IN STILE GOLBET
+// DIZIONARIO BANDIERE E NOMI CAMPIONATI IN STILE GOLDBET
 const LEAGUE_FLAGS = {
   "ARG": "🇦🇷", "B1": "🇧🇪", "BRA": "🇧🇷", "CHN": "🇨🇳", "D1": "🇩🇪", "D2": "🇩🇪",
   "DNK": "🇩🇰", "IRL": "🇮🇪", "MEX": "🇲🇽", "NOR": "🇳🇴", "P1": "🇵🇹", "RUS": "🇷🇺",
