@@ -1,19 +1,49 @@
-// MAPPATURA CODICI LEAGUES -> SLUG DI MATCHESIO
+// MAPPATURA CODICI LEAGUES -> SLUG DI MATCHESIO (Tutti i campionati coperti)
 const MATCHESIO_SLUGS = {
-  "E0": "premier-league-gb-eng", "E1": "championship-gb-eng", "E2": "league-one-gb-eng",
-  "E3": "league-two-gb-eng", "EC": "national-league-gb-eng", "I1": "serie-a-it",
-  "I2": "serie-b-it", "D1": "bundesliga-de", "D2": "2-bundesliga-de", "SP1": "la-liga-es",
-  "SP2": "segunda-division-es", "F1": "ligue-1-fr", "F2": "ligue-2-fr", "N1": "eredivisie-nl",
-  "B1": "first-division-a-be", "P1": "primeira-liga-pt", "T1": "super-lig-tr",
-  "DNK": "superliga-dk", "USA": "mls-us", "BRA": "serie-a-br", "ARG": "liga-profesional-ar",
-  "NOR": "eliteserien-no", "SWE": "allsvenskan-se", "IRL": "premier-division-ie",
-  "MEX": "liga-mx-mx", "CHN": "super-league-cn", "RUS": "premier-league-ru",
-  "G1": "super-league-gr", "AUT": "bundesliga-at", "SWZ": "super-league-ch",
-  "SCO": "premiership-gb-sct", "SC0": "premiership-gb-sct", "SC1": "championship-gb-sct",
-  "SC2": "league-one-gb-sct", "SC3": "league-two-gb-sct"
+  "E0": ["premier-league-gb-eng"],
+  "E1": ["championship-gb-eng"],
+  "I1": ["serie-a-it"],
+  "SP1": ["la-liga-es"],
+  "D1": ["bundesliga-de"],
+  "F1": ["ligue-1-fr"],
+  "N1": ["eredivisie-nl"],
+  "P1": ["primeira-liga-pt"],
+  "T1": ["super-lig-tr"],
+  "BRA": ["serie-a-br"],
+  "MEX": ["liga-mx-mx"],
+
+  // I TUOI LINK VERIFICATI DALLO SMARTPHONE
+  "B1": ["jupiler-pro-league-be"],
+  "USA": ["major-league-soccer-us"],
+  "I2": ["serie-b-it"],
+  "D2": ["2-bundesliga-de"],
+  "SP2": ["segunda-division-es"],
+  "F2": ["ligue-2-fr"],
+  "SCO": ["premiership-gb-sct"],
+  "SC0": ["premiership-gb-sct"],
+  "E2": ["league-one-gb-eng"],
+  "E3": ["league-two-gb-eng"],
+  "EC": ["national-league-gb-eng"],
+
+  // CAMPIONATI NON ANCORA VERIFICATI (Il Worker proverà in sequenza le 3 varianti per trovare quella giusta)
+  "DNK": ["superligaen-dk", "superliga-dk", "super-liga-dk"],
+  "RUS": ["premier-league-ru", "russian-premier-league-ru", "premier-liga-ru"],
+  "ARG": ["liga-profesional-ar", "liga-profesional-de-futbol-ar", "primera-division-ar"],
+  "NOR": ["eliteserien-no", "eliteserien-nor", "eliteserien-norway"],
+  "SWE": ["allsvenskan-se", "allsvenskan-swe", "allsvenskan-suede"],
+  "CHN": ["super-league-cn", "chinese-super-league-cn", "super-league-china"],
+  "IRL": ["premier-division-ie", "premier-division-irl", "league-of-ireland-premier-division"],
+  "G1": ["super-league-gr", "super-league-1-gr", "super-league-greece"],
+  "SWZ": ["super-league-ch", "credit-suisse-super-league-ch", "super-league-switzerland"],
+  "AUT": ["bundesliga-at", "austrian-bundesliga-at", "admiral-bundesliga-at"],
+  "SC1": ["championship-gb-sct", "scottish-championship-gb-sct", "championship-scotland"],
+  "SC2": ["league-one-gb-sct", "scottish-league-one-gb-sct", "league-one-scotland"],
+  "SC3": ["league-two-gb-sct", "scottish-league-two-gb-sct", "league-two-scotland"],
+  "POL": ["ekstraklasa-pl", "poland-ekstraklasa", "pko-ekstraklasa-pl"],
+  "JPN": ["j1-league-jp", "j-league-jp", "j1-league-japan"]
 };
 
-// DIZIONARIO BANDIERE E NOMI CAMPIONATI IN STILE GOLDBET
+// DIZIONARIO EMOTICON BANDIERE
 const LEAGUE_FLAGS = {
   "ARG": "🇦🇷", "B1": "🇧🇪", "BRA": "🇧🇷", "CHN": "🇨🇳", "D1": "🇩🇪", "D2": "🇩🇪",
   "DNK": "🇩🇰", "IRL": "🇮🇪", "MEX": "🇲🇽", "NOR": "🇳🇴", "P1": "🇵🇹", "RUS": "🇷🇺",
@@ -46,9 +76,8 @@ export default {
     const url = new URL(request.url);
     const dbArchivio = env.DB_ARCHIVIO;
     const dbSoglie = env.DB_SOGLIE;
-    const apiKey = env.API_FOOTBALL_KEY || "a045158f354f22a763d193b99f52ae48";
 
-    // 1. ROTTA PARTITE ON-DEMAND + TABELLA DI CLASSIFICA SIMULATA
+    // 1. ROTTA PARTITE ON-DEMAND (Accordion dettagliato integrato nella grafica scura)
     if (url.pathname === "/matches") {
       const leagueDiv = url.searchParams.get("league");
       if (!leagueDiv) {
@@ -80,7 +109,6 @@ export default {
           tableHtml += "</tbody></table>";
         }
 
-        // Estraiamo le partite del calendario
         const matches = await dbSoglie.prepare(
           "SELECT event_date, home_team_name_api, away_team_name_api, goals_home, goals_away, status FROM calendario_partite WHERE league_div = ? ORDER BY event_date ASC"
         ).bind(leagueDiv).all();
@@ -263,7 +291,6 @@ export default {
         html += ".status-running-msg { text-align: center; color: #f59e0b; font-size: 13px; font-weight: bold; margin-bottom: 15px; }";
         html += ".error-box { background: #ef444422; border-left: 4px solid #ef4444; padding: 12px; margin-bottom: 20px; border-radius: 4px; color: #fca5a5; font-size: 13px; }";
         
-        // Tab Bar Inferiore fissa con i 5 pulsanti, completamente asincroni
         html += ".bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #090d16; border-top: 1px solid #1e293b; display: flex; justify-content: space-around; align-items: center; padding: 10px 0; z-index: 1000; box-shadow: 0 -4px 10px rgba(0,0,0,0.5); }";
         html += ".nav-btn { background: none; border: none; display: flex; flex-direction: column; align-items: center; color: #64748b; cursor: pointer; text-decoration: none; padding: 4px 10px; width: 20%; transition: color 0.2s, filter 0.2s; }";
         html += ".nav-btn-active { color: #00ebff !important; }";
@@ -277,7 +304,7 @@ export default {
         
         html += "<div class='container'>";
         
-        // Intestazione GOLDBET MONTECARLO
+        // Intestazione
         html += "<div class='header-title'><span class='white'>GOLDBET</span> <span class='neon'>MONTECARLO</span></div>";
         html += "<div class='subtitle-stats'><span id='stat-totale' class='neon'>" + totalePartite + "</span> PARTITE SALVATE | STAGIONE <span id='stat-season' class='neon'>" + currentSeason + "</span></div>";
         html += "<div class='subtitle-time'>ULTIMO AGGIORNAMENTO <span id='stat-last-sync'>" + lastSync + "</span></div>";
@@ -412,7 +439,7 @@ export default {
         const selectedCards = "document.querySelectorAll('.league-item.selected[data-active=\"1\"]')";
         html += "  const selected = Array.from(" + selectedCards + ").map(c => c.id.replace('card-', ''));";
         html += "  if (selected.length === 0) {";
-        html += "    alert('Tocca i campionati per accenderli di ciano prima di avviare!');";
+        html += "    alert('Tocca i campionati per accenderlo di ciano prima di avviare!');";
         html += "    return;";
         html += "  }";
         
@@ -420,7 +447,7 @@ export default {
         html += "  document.getElementById('btn-start').disabled = true;";
         html += "  document.getElementById('btn-reset').disabled = true;";
         html += "  document.getElementById('sync-msg').style.display = 'block';";
-        html += "  document.getElementById('sync-msg').innerText = 'Sincronizzazione avviata in background...';";
+        html += "  document.getElementById('sync-msg').innerText = 'Sincronizzazione o Elaborazione avviata...';";
         
         // Passaggio diretto dei dati nell'indirizzo (Query String) - 100% immune ai bug mobili e con parametro start=1
         html += "  await fetch('/sync?leagues=' + selected.join(',') + '&nitro=' + nitroActive + '&start=1', { method: 'POST' });";
@@ -566,7 +593,7 @@ export default {
         const selfUrl = "https://" + url.host + "/sync";
 
         ctx.waitUntil(
-          runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLeagues, selfUrl)
+          runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLeagues, selfUrl, nitroStr)
         );
 
         return new Response(JSON.stringify({ success: true }), {
@@ -582,15 +609,15 @@ export default {
   }
 };
 
-// COMPITO IN BACKGROUND COMPLETAMENTE INTERATTIVO CON CHIP DI PROBING E SIMULATORE POISSON MONTE CARLO INTEGRATO
-async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainingLeagues, selfUrl) {
+// COMPITO IN BACKGROUND COMPLETAMENTE INTERATTIVO CON INTEGRAZIONE PAUSA E NITRO DINAMICO DA DATABASE
+async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLeagues, selfUrl, nitroMode) {
   try {
     let totaleInserite = 0;
     let rilevataStagione = "N.D.";
     
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    // Carichiamo TUTTI gli slug e i parametri dal database con un'unica query iniziale per limitare i consumi [3]
+    // Carichiamo TUTTI gli slug dal database D1 con un'unica query iniziale per limitare i consumi [3]
     const allSlugs = await dbSoglie.prepare("SELECT metric, value FROM api_status WHERE metric LIKE 'slug_%'").all();
     const slugMap = {};
     if (allSlugs.results) {
@@ -600,8 +627,8 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
       }
     }
 
-    for (let i = 0; i < selectedLeagues.length; i++) {
-      const divCode = selectedLeagues[i];
+    for (let i = 0; i < currentBatch.length; i++) {
+      const divCode = currentBatch[i];
       const slugVal = slugMap[divCode];
 
       // CONTROLLO ATTIVO DELLA PAUSA AD OGNI STEP
@@ -616,7 +643,7 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
 
       let matches = [];
 
-      // BINARIO 1: Campionati presenti su Matchesio (Slug esistente)
+      // BINARIO 1: Campionati presenti su Matchesio (Slug esistente nel database)
       if (slugVal) {
         const slug = slugVal.split(",");
         let apiResponse = null;
@@ -643,7 +670,6 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
           if (rawMatches && rawMatches.length > 0) {
             rilevataStagione = rawMatches[0].season || "2025/26";
             
-            // Mappiamo i dati di Matchesio nella nostra struttura standard
             for (let j = 0; j < rawMatches.length; j++) {
               const m = rawMatches[j];
               const timestampPartita = m.date + "T" + m.time + ":00Z";
@@ -671,12 +697,9 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
       }
 
       // BINARIO 2: Campionati mancanti su Matchesio (Generazione Matematica tramite il tuo archivio)
-      // Se non c'è uno slug su Matchesio, il Worker genera il calendario in autonomia basandosi su 'archivio_partite'
       if (!slugVal || matches.length === 0) {
-        rilevataStagione = "2025/26"; // Assumiamo la stagione attuale in automatico
+        rilevataStagione = "2025/26";
         
-        // Estraiamo tutte le squadre uniche che hanno giocato in casa in questo campionato nel tuo archivio!
-        // Questo ti garantisce la precisione al 100% dei nomi dei club e delle promozioni/retrocessioni
         const teamsRes = await dbArchivio.prepare(
           "SELECT DISTINCT HomeTeam FROM partite WHERE Div = ?"
         ).bind(divCode).all();
@@ -689,23 +712,18 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
         }
 
         if (squadreReali.length >= 2) {
-          // Generiamo matematicamente l'elenco di tutte le partite possibili (Modello Berger/Round-Robin)
-          // Se la lega è a 10 squadre (Modello a Doppio Loop), generiamo un quadruplo girone!
           const maxIncontri = squadreReali.length === 10 ? 4 : 2;
           let idFittizio = 1000000 + (i * 10000);
 
           for (let j = 0; j < squadreReali.length; j++) {
             for (let k = 0; k < squadreReali.length; k++) {
               if (j !== k) {
-                // Generiamo la partita (Andata e Ritorno, o ripetuta per il quadruplo girone)
                 const volte = maxIncontri / 2;
                 for (let v = 0; v < volte; v++) {
                   idFittizio++;
                   
-                  // Controlliamo nel tuo archivio reale se questa partita è già stata giocata
-                  // In questo modo, usiamo i tuoi dati di Football-Data per sincronizzare il progresso reale!
                   const giocataRes = await dbArchivio.prepare(
-                    "SELECT FTHG, FTAG, FTR FROM partite WHERE Div = ? AND HomeTeam = ? AND AwayTeam = ? LIMIT 1"
+                    "SELECT FTHG, FTAG FROM partite WHERE Div = ? AND HomeTeam = ? AND AwayTeam = ? LIMIT 1"
                   ).bind(divCode, squadreReali[j], squadreReali[k]).all();
 
                   let goalsHome = null;
@@ -723,7 +741,7 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
                     fixture_id: idFittizio,
                     div: divCode,
                     round: "Giornata N.D.",
-                    date: new Date().toISOString(), // Usiamo la data odierna come segnaposto
+                    date: new Date().toISOString(),
                     home: squadreReali[j],
                     away: squadreReali[k],
                     goals_home: goalsHome,
@@ -737,7 +755,7 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
         }
       }
 
-      // SALVATAGGIO DEL CALENDARIO IN D1 (SOVRASCRITTURA ATTIVA)
+      // Salva nel database
       if (matches.length > 0) {
         const queryInsert = "INSERT OR REPLACE INTO calendario_partite (fixture_id, league_id, league_div, round, event_date, home_team_name_api, home_team_id_local, away_team_name_api, away_team_id_local, goals_home, goals_away, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         const statements = [];
@@ -747,14 +765,14 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
           statements.push(
             dbSoglie.prepare(queryInsert).bind(
               m.fixture_id,
-              0,
+              0, 
               divCode,
               m.round,
               m.date,
               m.home,
-              0, // ID Locale default
+              0, 
               m.away,
-              0,
+              0, 
               m.goals_home,
               m.goals_away,
               m.status
@@ -770,9 +788,6 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
         // ==========================================
         // AVVIO MOTORE SIMULATORE MONTE CARLO POISSON
         // ==========================================
-        console.log("Inizio simulazione Monte Carlo per " + divCode);
-
-        // 1. Estraiamo la lista dei club unici salvati in questa lega
         const teamsList = [];
         const tSet = new Set();
         for (let j = 0; j < matches.length; j++) {
@@ -783,8 +798,6 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
 
         const numTeams = teamsList.length;
 
-        // 2. Estraiamo i parametri di attacco/difesa/campo calcolati dal tuo Worker Engine
-        // Se non troviamo i valori reali, applichiamo dei parametri neutri (1.0) di protezione per non bloccare mai la simulazione
         const paramMap = {};
         for (let j = 0; j < numTeams; j++) {
           const tName = teamsList[j];
@@ -799,7 +812,6 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
           };
         }
 
-        // 3. Dividiamo le partite in giocate (reali) e da giocare (da simulare)
         const playedList = [];
         const unplayedList = [];
 
@@ -808,15 +820,12 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
           if (m.status === "Played" && m.goals_home !== null && m.goals_away !== null) {
             playedList.push(m);
           } else {
-            // Calcoliamo i parametri di attesa gol attacco/difesa per questa specifica sfida
             const hParam = paramMap[m.home] || { att: 1.0, def: 1.0, home_adv: 0.3 };
             const aParam = paramMap[m.away] || { att: 1.0, def: 1.0, home_adv: 0.3 };
 
             const lambda = hParam.att * aParam.def * (1.0 + hParam.home_adv);
             const mu = aParam.att * hParam.def;
 
-            // PRE-CALCOLO POISSON 1X2 (Ottimizzazione estrema!) [3]
-            // Calcoliamo la probabilità una sola volta per match, riducendo a zero l'uso di CPU nel ciclo Monte Carlo [3]
             let pH = 0; let pD = 0; let pA = 0;
             for (let h = 0; h <= 5; h++) {
               for (let a = 0; a <= 5; a++) {
@@ -838,19 +847,17 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
           }
         }
 
-        // 4. CICLO MONTE CARLO (2.000 Simulazioni Veloci in RAM) [3]
         const N_SIM = 2000;
-        const standingStats = {}; // Registra la somma dei punti e i piazzamenti
+        const standingStats = {};
         for (let j = 0; j < numTeams; j++) {
           standingStats[teamsList[j]] = {
             totalPoints: 0,
             wins: 0,
             europe: 0,
             relegation: 0
-          };
+              };
         }
 
-        // Costruiamo la base di punti reali già accumulati a oggi
         const basePoints = {};
         for (let j = 0; j < numTeams; j++) basePoints[teamsList[j]] = 0;
         for (let j = 0; j < playedList.length; j++) {
@@ -866,13 +873,11 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
         }
 
         for (let sim = 0; sim < N_SIM; sim++) {
-          // Copiamo i punti base in una classifica virtuale
           const simStandings = {};
           for (let j = 0; j < numTeams; j++) {
             simStandings[teamsList[j]] = basePoints[teamsList[j]];
           }
 
-          // Simula i match rimanenti estraendo un numero casuale in base al nostro Poisson pre-calcolato [3]
           for (let j = 0; j < unplayedList.length; j++) {
             const u = unplayedList[j];
             const rand = Math.random();
@@ -887,26 +892,23 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
             }
           }
 
-          // Convertiamo in array e ordiniamo per punti
           const sortedSim = [];
           for (let j = 0; j < numTeams; j++) {
             sortedSim.push({ team: teamsList[j], points: simStandings[teamsList[j]] });
           }
           sortedSim.sort((a, b) => b.points - a.points);
 
-          // Registriamo i piazzamenti di questa specifica simulazione
           for (let rank = 0; rank < sortedSim.length; rank++) {
             const teamName = sortedSim[rank].team;
             const points = sortedSim[rank].points;
 
             standingStats[teamName].totalPoints += points;
             if (rank === 0) standingStats[teamName].wins++;
-            if (rank < 4) standingStats[teamName].europe++; // Champions League (Top 4)
-            if (rank >= numTeams - 3) standingStats[teamName].relegation++; // Retrocessione (Bottom 3)
+            if (rank < 4) standingStats[teamName].europe++;
+            if (rank >= numTeams - 3) standingStats[teamName].relegation++;
           }
         }
 
-        // 5. SCRITTURA DEI RISULTATI DELLA SIMULAZIONE IN D1
         const simStatements = [];
         const querySimInsert = "INSERT OR REPLACE INTO simulazioni_classifica (league_div, team_name, avg_points, win_pct, europe_pct, relegation_pct) VALUES (?, ?, ?, ?, ?, ?)";
         
@@ -939,20 +941,23 @@ async function runBackgroundSync(dbArchivio, dbSoglie, selectedLeagues, remainin
       // Imposta lo stato della lega su "completed" (Verde 🟢)
       await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'completed')").bind(divCode).run();
 
+      // REGOLAZIONE DINAMICA DELLA VELOCITÀ LEGGENDO IL DATABASE AD OGNI INTERVALLO
+      const nitroRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'nitro_mode'").first();
+      const currentNitro = nitroRes ? nitroRes.value : "1";
+      const delayTime = currentNitro === "1" ? 1200 : 10000;
+
       // Pausa di sicurezza con tempo dinamico (10s Normal / 1.2s Nitro)
-      // Se stiamo per concatenare un altro viaggio, inseriamo una piccola pausa di 2 secondi tra i viaggi
-      if (i < selectedLeagues.length - 1 || remainingLeagues.length > 0) {
-        const delayMs = (i < selectedLeagues.length - 1) ? delayTime : 2000;
+      if (i < currentBatch.length - 1 || remainingLeagues.length > 0) {
+        const delayMs = (i < currentBatch.length - 1) ? delayTime : 2000;
         await delay(delayMs); 
       }
     }
 
-    // SCELTA CRUCIALE DI CATENA (CHAINING) PER ABBATTERE IL LIMITE DELLE 50 SUBREQUEST [3]
+    // CATENA RICORSIVA PER EVITARE I LIMITI DI SUBREQUEST [3]
     if (remainingLeagues.length > 0) {
-      const nextUrl = selfUrl + "?leagues=" + remainingLeagues.join(",");
+      const nextUrl = selfUrl + "?leagues=" + remainingLeagues.join(",") + "&nitro=" + nitroMode;
       await fetch(nextUrl, { method: "POST" });
     } else {
-      // Se abbiamo finito l'ultimo gruppo di campionati, riportiamo lo stato globale a "idle" e salviamo la data
       const adesso = new Date().toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
       await dbSoglie.batch([
         dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', ?)").bind(adesso),
