@@ -2,45 +2,39 @@
 const MATCHESIO_SLUGS = {
   "E0": ["premier-league-gb-eng"],
   "E1": ["championship-gb-eng"],
-  "I1": ["serie-a-it"],
-  "SP1": ["la-liga-es"],
-  "D1": ["bundesliga-de"],
-  "F1": ["ligue-1-fr"],
-  "N1": ["eredivisie-nl"],
-  "P1": ["primeira-liga-pt"],
-  "T1": ["super-lig-tr"],
-  "BRA": ["serie-a-br"],
-  "MEX": ["liga-mx-mx"],
-
-  // I TUOI LINK VERIFICATI DALLO SMARTPHONE
-  "B1": ["jupiler-pro-league-be"],
-  "USA": ["major-league-soccer-us"],
-  "I2": ["serie-b-it"],
-  "D2": ["2-bundesliga-de"],
-  "SP2": ["segunda-division-es"],
-  "F2": ["ligue-2-fr"],
-  "SCO": ["premiership-gb-sct"],
-  "SC0": ["premiership-gb-sct"],
   "E2": ["league-one-gb-eng"],
   "E3": ["league-two-gb-eng"],
   "EC": ["national-league-gb-eng"],
-
-  // CAMPIONATI NON ANCORA VERIFICATI (Il Worker proverà in sequenza le 3 varianti per trovare quella giusta)
+  "I1": ["serie-a-it"],
+  "I2": ["serie-b-it"],
+  "D1": ["bundesliga-de"],
+  "D2": ["2-bundesliga-de"],
+  "SP1": ["la-liga-es"],
+  "SP2": ["segunda-division-es"],
+  "F1": ["ligue-1-fr"],
+  "F2": ["ligue-2-fr"],
+  "N1": ["eredivisie-nl"],
+  "B1": ["first-division-a-be"],
+  "P1": ["primeira-liga-pt"],
+  "T1": ["super-lig-tr"],
   "DNK": ["superligaen-dk", "superliga-dk", "super-liga-dk"],
-  "RUS": ["premier-league-ru", "russian-premier-league-ru", "premier-liga-ru"],
-  "ARG": ["liga-profesional-ar", "liga-profesional-de-futbol-ar", "primera-division-ar"],
+  "USA": ["major-league-soccer-us"],
+  "BRA": ["serie-a-br"],
+  "ARG": ["liga-profesional-ar"],
   "NOR": ["eliteserien-no", "eliteserien-nor", "eliteserien-norway"],
   "SWE": ["allsvenskan-se", "allsvenskan-swe", "allsvenskan-suede"],
-  "CHN": ["super-league-cn", "chinese-super-league-cn", "super-league-china"],
   "IRL": ["premier-division-ie", "premier-division-irl", "league-of-ireland-premier-division"],
+  "MEX": ["liga-mx-mx"],
+  "CHN": ["super-league-cn", "chinese-super-league-cn", "super-league-china"],
+  "RUS": ["premier-league-ru", "russian-premier-league-ru", "premier-liga-ru"],
   "G1": ["super-league-gr", "super-league-1-gr", "super-league-greece"],
-  "SWZ": ["super-league-ch", "credit-suisse-super-league-ch", "super-league-switzerland"],
   "AUT": ["bundesliga-at", "austrian-bundesliga-at", "admiral-bundesliga-at"],
+  "SWZ": ["super-league-ch", "credit-suisse-super-league-ch", "super-league-switzerland"],
+  "SCO": ["premiership-gb-sct"],
+  "SC0": ["premiership-gb-sct"],
   "SC1": ["championship-gb-sct", "scottish-championship-gb-sct", "championship-scotland"],
   "SC2": ["league-one-gb-sct", "scottish-league-one-gb-sct", "league-one-scotland"],
-  "SC3": ["league-two-gb-sct", "scottish-league-two-gb-sct", "league-two-scotland"],
-  "POL": ["ekstraklasa-pl", "poland-ekstraklasa", "pko-ekstraklasa-pl"],
-  "JPN": ["j1-league-jp", "j-league-jp", "j1-league-japan"]
+  "SC3": ["league-two-gb-sct", "scottish-league-two-gb-sct", "league-two-scotland"]
 };
 
 // DIZIONARIO EMOTICON BANDIERE
@@ -239,7 +233,7 @@ export default {
       }
     }
 
-    // 6. ROTTA PRINCIPALE (DASHBOARD)
+    // 6. ROTTA PRINCIPALE (DASHBOARD - Grafica identica al tuo Screenshot)
     if (url.pathname === "/") {
       try {
         const statusRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
@@ -254,6 +248,7 @@ export default {
         const currentSeason = seasonRes ? seasonRes.value : "N.D.";
         const nitroMode = nitroRes ? nitroRes.value : "1";
 
+        // Estrazione delle leghe attive ordinate alfabeticamente per la sigla ID (es. ARG, B1, BRA, D1, E0...)
         const leghe = await dbArchivio.prepare("SELECT id, name, emoji, is_active FROM leagues ORDER BY id ASC").all();
         const listaLeghe = leghe.results || [];
 
@@ -291,6 +286,7 @@ export default {
         html += ".status-running-msg { text-align: center; color: #f59e0b; font-size: 13px; font-weight: bold; margin-bottom: 15px; }";
         html += ".error-box { background: #ef444422; border-left: 4px solid #ef4444; padding: 12px; margin-bottom: 20px; border-radius: 4px; color: #fca5a5; font-size: 13px; }";
         
+        // Tab Bar Inferiore fissa con i 5 pulsanti, completamente asincroni
         html += ".bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #090d16; border-top: 1px solid #1e293b; display: flex; justify-content: space-around; align-items: center; padding: 10px 0; z-index: 1000; box-shadow: 0 -4px 10px rgba(0,0,0,0.5); }";
         html += ".nav-btn { background: none; border: none; display: flex; flex-direction: column; align-items: center; color: #64748b; cursor: pointer; text-decoration: none; padding: 4px 10px; width: 20%; transition: color 0.2s, filter 0.2s; }";
         html += ".nav-btn-active { color: #00ebff !important; }";
@@ -304,7 +300,7 @@ export default {
         
         html += "<div class='container'>";
         
-        // Intestazione
+        // Intestazione GOLDBET MONTECARLO
         html += "<div class='header-title'><span class='white'>GOLDBET</span> <span class='neon'>MONTECARLO</span></div>";
         html += "<div class='subtitle-stats'><span id='stat-totale' class='neon'>" + totalePartite + "</span> PARTITE SALVATE | STAGIONE <span id='stat-season' class='neon'>" + currentSeason + "</span></div>";
         html += "<div class='subtitle-time'>ULTIMO AGGIORNAMENTO <span id='stat-last-sync'>" + lastSync + "</span></div>";
@@ -609,7 +605,7 @@ export default {
   }
 };
 
-// COMPITO IN BACKGROUND COMPLETAMENTE INTERATTIVO CON INTEGRAZIONE PAUSA E NITRO DINAMICO DA DATABASE
+// COMPITO IN BACKGROUND COMPLETAMENTE INTERATTIVO CON CHIPI DI PROBING E SIMULATORE POISSON MONTE CARLO INTEGRATO
 async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLeagues, selfUrl, nitroMode) {
   try {
     let totaleInserite = 0;
@@ -697,11 +693,12 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
       }
 
       // BINARIO 2: Campionati mancanti su Matchesio (Generazione Matematica tramite il tuo archivio)
+      // MODIFICA CORRETTA: La tabella interrogata su archivio_partite si chiama 'matches' (non 'partite')!
       if (!slugVal || matches.length === 0) {
         rilevataStagione = "2025/26";
         
         const teamsRes = await dbArchivio.prepare(
-          "SELECT DISTINCT HomeTeam FROM partite WHERE Div = ?"
+          "SELECT DISTINCT HomeTeam FROM matches WHERE Div = ?"
         ).bind(divCode).all();
 
         const squadreReali = [];
@@ -723,7 +720,7 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
                   idFittizio++;
                   
                   const giocataRes = await dbArchivio.prepare(
-                    "SELECT FTHG, FTAG FROM partite WHERE Div = ? AND HomeTeam = ? AND AwayTeam = ? LIMIT 1"
+                    "SELECT FTHG, FTAG FROM matches WHERE Div = ? AND HomeTeam = ? AND AwayTeam = ? LIMIT 1"
                   ).bind(divCode, squadreReali[j], squadreReali[k]).all();
 
                   let goalsHome = null;
@@ -855,7 +852,7 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
             wins: 0,
             europe: 0,
             relegation: 0
-              };
+          };
         }
 
         const basePoints = {};
