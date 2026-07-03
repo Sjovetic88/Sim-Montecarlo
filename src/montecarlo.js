@@ -1,43 +1,17 @@
-// MAPPATURA CODICI LEAGUES -> SLUG DI MATCHESIO (Tutti i campionati coperti)
-const MATCHESIO_SLUGS = {
-  "E0": ["premier-league-gb-eng"],
-  "E1": ["championship-gb-eng"],
-  "E2": ["league-one-gb-eng"],
-  "E3": ["league-two-gb-eng"],
-  "EC": ["national-league-gb-eng"],
-  "I1": ["serie-a-it"],
-  "I2": ["serie-b-it"],
-  "D1": ["bundesliga-de"],
-  "D2": ["2-bundesliga-de"],
-  "SP1": ["la-liga-es"],
-  "SP2": ["segunda-division-es"],
-  "F1": ["ligue-1-fr"],
-  "F2": ["ligue-2-fr"],
-  "N1": ["eredivisie-nl"],
-  "B1": ["first-division-a-be"],
-  "P1": ["primeira-liga-pt"],
-  "T1": ["super-lig-tr"],
-  "DNK": ["superligaen-dk", "superliga-dk", "super-liga-dk"],
-  "USA": ["major-league-soccer-us"],
-  "BRA": ["serie-a-br"],
-  "ARG": ["liga-profesional-ar"],
-  "NOR": ["eliteserien-no", "eliteserien-nor", "eliteserien-norway"],
-  "SWE": ["allsvenskan-se", "allsvenskan-swe", "allsvenskan-suede"],
-  "IRL": ["premier-division-ie", "premier-division-irl", "league-of-ireland-premier-division"],
-  "MEX": ["liga-mx-mx"],
-  "CHN": ["super-league-cn", "chinese-super-league-cn", "super-league-china"],
-  "RUS": ["premier-league-ru", "russian-premier-league-ru", "premier-liga-ru"],
-  "G1": ["super-league-gr", "super-league-1-gr", "super-league-greece"],
-  "AUT": ["bundesliga-at", "austrian-bundesliga-at", "admiral-bundesliga-at"],
-  "SWZ": ["super-league-ch", "credit-suisse-super-league-ch", "super-league-switzerland"],
-  "SCO": ["premiership-gb-sct"],
-  "SC0": ["premiership-gb-sct"],
-  "SC1": ["championship-gb-sct", "scottish-championship-gb-sct", "championship-scotland"],
-  "SC2": ["league-one-gb-sct", "scottish-league-one-gb-sct", "league-one-scotland"],
-  "SC3": ["league-two-gb-sct", "scottish-league-two-gb-sct", "league-two-scotland"]
-};
+// =========================================================================
+// GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE INTEGRATO
+// =========================================================================
+// Questo Worker gestisce due flussi principali in modo asincrono (AJAX):
+// 1. Sincronizzazione automatica dei calendari reali da Matchesio.com
+//    con auto-apprendimento e probing automatico di 3 link di riserva.
+// 2. Generatore matematico di calendari per i campionati non presenti sul sito.
+// 3. Motore predittivo Monte Carlo (Poisson) che simula 2.000 volte in RAM
+//    il resto del campionato stimando le probabilità finali di ogni squadra.
+// 4. Interfaccia utente interattiva in stile GOLDBET ENGINE (Nero e Ciano Neon)
+//    con controllo dello schermo On/Off (Page Visibility API) e Auto-Nitro.
+// =========================================================================
 
-// DIZIONARIO EMOTICON BANDIERE
+// DIZIONARIO DI EMOTICON DELLE BANDIERE NAZIONALI PER L'INTERFACCIA VISIVA
 const LEAGUE_FLAGS = {
   "ARG": "🇦🇷", "B1": "🇧🇪", "BRA": "🇧🇷", "CHN": "🇨🇳", "D1": "🇩🇪", "D2": "🇩🇪",
   "DNK": "🇩🇰", "IRL": "🇮🇪", "MEX": "🇲🇽", "NOR": "🇳🇴", "P1": "🇵🇹", "RUS": "🇷🇺",
@@ -45,6 +19,7 @@ const LEAGUE_FLAGS = {
   "I2": "🇮🇹", "SP1": "🇪🇸", "F1": "🇫🇷", "N1": "🇳🇱", "G1": "🇬🇷", "AUT": "🇦🇹", "SWZ": "🇨🇭"
 };
 
+// DIZIONARIO DEI NOMI ESTESI DEI CAMPIONATI IN MAIUSCOLO PER LA DASHBOARD
 const LEAGUE_NAMES = {
   "ARG": "ARGENTINA", "B1": "BELGIUM", "BRA": "BRAZIL", "CHN": "CHINA", "D1": "GERMANY",
   "D2": "GERMANY D2", "DNK": "DENMARK", "IRL": "IRELAND", "MEX": "MEXICO", "NOR": "NORWAY",
@@ -53,14 +28,15 @@ const LEAGUE_NAMES = {
   "I2": "ITALY SERIE B", "SP1": "SPAIN LA LIGA", "F1": "FRANCE LIGUE 1", "N1": "NETHERLANDS EREDIVISIE"
 };
 
-// Calcolo fattoriale di base per Poisson
+// FUNZIONE MATEMATICA DI SUPPORTO: Calcola il fattoriale di un numero intero
 function factorial(n) {
   let res = 1;
   for (let i = 2; i <= n; i++) res *= i;
   return res;
 }
 
-// Probabilità di Poisson
+// FUNZIONE MATEMATICA DI SUPPORTO: Calcola la distribuzione di probabilità di Poisson
+// Usata dal simulatore per stimare la probabilità di segnare K gol in base all'attesa Lambda
 function poissonProb(k, lambda) {
   return (Math.pow(lambda, k) * Math.exp(-lambda)) / factorial(k);
 }
@@ -70,21 +46,26 @@ export default {
     const url = new URL(request.url);
     const dbArchivio = env.DB_ARCHIVIO;
     const dbSoglie = env.DB_SOGLIE;
+    const apiKey = env.API_FOOTBALL_KEY || "a045158f354f22a763d193b99f52ae48";
 
-    // 1. ROTTA PARTITE ON-DEMAND (Accordion dettagliato integrato nella grafica scura)
+    // -------------------------------------------------------------------------
+    // ROTTA 1: /matches (Accordion on-demand)
+    // Ritorna l'HTML con la classifica proiettata e l'elenco partite del campionato
+    // -------------------------------------------------------------------------
     if (url.pathname === "/matches") {
       const leagueDiv = url.searchParams.get("league");
       if (!leagueDiv) {
         return new Response("Campionato non specificato", { status: 400 });
       }
       try {
-        // Estraiamo la classifica proiettata dal database SOGLIE
+        // Estraiamo i risultati della simulazione Monte Carlo memorizzati nel database SOGLIE
         const simRes = await dbSoglie.prepare(
           "SELECT team_name, avg_points, win_pct, europe_pct, relegation_pct FROM simulazioni_classifica WHERE league_div = ? ORDER BY avg_points DESC"
         ).bind(leagueDiv).all();
 
         let tableHtml = "";
 
+        // Se esistono già simulazioni calcolate, creiamo la tabella della Classifica Proiettata
         if (simRes.results && simRes.results.length > 0) {
           tableHtml += "<h3>Classifica Proiettata (Proiezione Monte Carlo)</h3>";
           tableHtml += "<table style='width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 12px; color: #cbd5e1;'>";
@@ -103,6 +84,7 @@ export default {
           tableHtml += "</tbody></table>";
         }
 
+        // Estraiamo l'elenco completo delle partite (giocate e future) dal database SOGLIE
         const matches = await dbSoglie.prepare(
           "SELECT event_date, home_team_name_api, away_team_name_api, goals_home, goals_away, status FROM calendario_partite WHERE league_div = ? ORDER BY event_date ASC"
         ).bind(leagueDiv).all();
@@ -139,7 +121,10 @@ export default {
       }
     }
 
-    // 2. ROTTA DI STATO JSON (Per il Long Polling)
+    // -------------------------------------------------------------------------
+    // ROTTA 2: /status (Stato JSON per Long Polling)
+    // Ritorna le metriche globali e gli stati individuali delle spie dei campionati
+    // -------------------------------------------------------------------------
     if (url.pathname === "/status") {
       try {
         const lastSyncRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'last_sync'").first();
@@ -185,7 +170,10 @@ export default {
       }
     }
 
-    // 3. ROTTA POST /mode (Stato schermo On/Off)
+    // -------------------------------------------------------------------------
+    // ROTTA 3: /mode (Rilevamento stato schermo On/Off)
+    // Aggiorna il valore di nitro_mode nel DB (1 = Schermo On, 0 = Schermo Off)
+    // -------------------------------------------------------------------------
     if (url.pathname === "/mode" && request.method === "POST") {
       try {
         const state = url.searchParams.get("state");
@@ -199,7 +187,10 @@ export default {
       }
     }
 
-    // 4. ROTTA POST /pause (Segnale di interruzione asincrono)
+    // -------------------------------------------------------------------------
+    // ROTTA 4: /pause (Segnale di interruzione)
+    // Cambia lo stato globale su 'paused' per bloccare i cicli asincroni
+    // -------------------------------------------------------------------------
     if (url.pathname === "/pause" && request.method === "POST") {
       try {
         await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'paused')").run();
@@ -211,7 +202,10 @@ export default {
       }
     }
 
-    // 5. ROTTA POST /reset (Svuotamento completo del database)
+    // -------------------------------------------------------------------------
+    // ROTTA 5: /reset (Svuotamento completo del database)
+    // Cancella le tabelle e ripristina i parametri iniziali di sistema
+    // -------------------------------------------------------------------------
     if (url.pathname === "/reset" && request.method === "POST") {
       try {
         const resetStatements = [
@@ -233,7 +227,9 @@ export default {
       }
     }
 
-    // 6. ROTTA PRINCIPALE (DASHBOARD)
+    // -------------------------------------------------------------------------
+    // ROTTA 6: / (DASHBOARD PRINCIPALE - INTERFACCIA WEB DI GOLDBET MONTECARLO)
+    // -------------------------------------------------------------------------
     if (url.pathname === "/") {
       try {
         const statusRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
@@ -248,7 +244,7 @@ export default {
         const currentSeason = seasonRes ? seasonRes.value : "N.D.";
         const nitroMode = nitroRes ? nitroRes.value : "1";
 
-        // Estrazione delle leghe attive ordinate alfabeticamente per la sigla ID (es. ARG, B1, BRA, D1, E0...)
+        // Estrazione di TUTTI i campionati (attivi e inattivi) ordinati alfabeticamente per codice ID (id ASC)
         const leghe = await dbArchivio.prepare("SELECT id, name, emoji, is_active FROM leagues ORDER BY id ASC").all();
         const listaLeghe = leghe.results || [];
 
@@ -271,7 +267,11 @@ export default {
         
         html += ".league-item { background: #0f172a; border: 1px solid #1e293b; margin-bottom: 14px; padding: 16px; border-radius: 8px; cursor: pointer; transition: background 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s; position: relative; }";
         html += ".league-item:hover { background: #1e293b; }";
+        
+        // Bordo Ciano Neon per la card selezionata
         html += ".league-item.selected { border-color: #00ebff !important; box-shadow: 0 0 10px rgba(0, 235, 255, 0.4); }";
+        
+        // Stile per i campionati inattivi (locked)
         html += ".league-item.inactive { opacity: 0.35; cursor: not-allowed; border-color: #0f172a; }";
         html += ".league-item.inactive:hover { background: #0f172a; }";
         
@@ -300,7 +300,7 @@ export default {
         
         html += "<div class='container'>";
         
-        // Intestazione
+        // Logo Principale
         html += "<div class='header-title'><span class='white'>GOLDBET</span> <span class='neon'>MONTECARLO</span></div>";
         html += "<div class='subtitle-stats'><span id='stat-totale' class='neon'>" + totalePartite + "</span> PARTITE SALVATE | STAGIONE <span id='stat-season' class='neon'>" + currentSeason + "</span></div>";
         html += "<div class='subtitle-time'>ULTIMO AGGIORNAMENTO <span id='stat-last-sync'>" + lastSync + "</span></div>";
@@ -423,7 +423,6 @@ export default {
         html += "  }";
         html += "}";
 
-        // Tasto NITRO (Toggle classe attivo)
         html += "function toggleNitro() {";
         html += "  const btn = document.getElementById('btn-nitro');";
         html += "  btn.classList.toggle('nitro-active');";
@@ -628,7 +627,7 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
       const divCode = currentBatch[i];
       const slugVal = slugMap[divCode];
 
-      // CONTROLLO ATTIVO DELLA PAUSA AD OGNI STEP
+      // CONTROLLO ATTIVO DELLA PAUSA AD OGNY STEP
       const statusCheck = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
       if (statusCheck && (statusCheck.value === "paused" || statusCheck.value === "idle")) {
         console.log("Processo interrotto o messo in pausa dall'utente.");
@@ -803,13 +802,13 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
           // MODIFICA SULLA TABELLA DEI PARAMETRI DELLE SQUADRE
           // Interroga la tua tabella 'team_stats' in archivio_partite
           const strengthRes = await dbArchivio.prepare(
-            "SELECT att, def, home_adv FROM team_stats WHERE team_name = ?"
+            "SELECT att, def, h_factor FROM team_stats WHERE team_name = ?"
           ).bind(tName).first();
 
           paramMap[tName] = {
             att: strengthRes ? strengthRes.att : 1.0,
             def: strengthRes ? strengthRes.def : 1.0,
-            home_adv: strengthRes ? strengthRes.home_adv : 0.3
+            home_adv: strengthRes ? strengthRes.h_factor : 0.3
           };
         }
 
