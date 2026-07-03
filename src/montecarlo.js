@@ -1,42 +1,3 @@
-// MAPPATURA CODICI LEAGUES -> SLUG DI MATCHESIO (Tutti i campionati coperti)
-const MATCHESIO_SLUGS = {
-  "E0": ["premier-league-gb-eng"],
-  "E1": ["championship-gb-eng"],
-  "E2": ["league-one-gb-eng"],
-  "E3": ["league-two-gb-eng"],
-  "EC": ["national-league-gb-eng"],
-  "I1": ["serie-a-it"],
-  "I2": ["serie-b-it"],
-  "D1": ["bundesliga-de"],
-  "D2": ["2-bundesliga-de"],
-  "SP1": ["la-liga-es"],
-  "SP2": ["segunda-division-es"],
-  "F1": ["ligue-1-fr"],
-  "F2": ["ligue-2-fr"],
-  "N1": ["eredivisie-nl"],
-  "B1": ["first-division-a-be"],
-  "P1": ["primeira-liga-pt"],
-  "T1": ["super-lig-tr"],
-  "DNK": ["superligaen-dk", "superliga-dk", "super-liga-dk"],
-  "USA": ["major-league-soccer-us"],
-  "BRA": ["serie-a-br"],
-  "ARG": ["liga-profesional-ar"],
-  "NOR": ["eliteserien-no", "eliteserien-nor", "eliteserien-norway"],
-  "SWE": ["allsvenskan-se", "allsvenskan-swe", "allsvenskan-suede"],
-  "IRL": ["premier-division-ie", "premier-division-irl", "league-of-ireland-premier-division"],
-  "MEX": ["liga-mx-mx"],
-  "CHN": ["super-league-cn", "chinese-super-league-cn", "super-league-china"],
-  "RUS": ["premier-league-ru", "russian-premier-league-ru", "premier-liga-ru"],
-  "G1": ["super-league-gr", "super-league-1-gr", "super-league-greece"],
-  "AUT": ["bundesliga-at", "austrian-bundesliga-at", "admiral-bundesliga-at"],
-  "SWZ": ["super-league-ch", "credit-suisse-super-league-ch", "super-league-switzerland"],
-  "SCO": ["premiership-gb-sct"],
-  "SC0": ["premiership-gb-sct"],
-  "SC1": ["championship-gb-sct", "scottish-championship-gb-sct", "championship-scotland"],
-  "SC2": ["league-one-gb-sct", "scottish-league-one-gb-sct", "league-one-scotland"],
-  "SC3": ["league-two-gb-sct", "scottish-league-two-gb-sct", "league-two-scotland"]
-};
-
 // DIZIONARIO EMOTICON BANDIERE
 const LEAGUE_FLAGS = {
   "ARG": "🇦🇷", "B1": "🇧🇪", "BRA": "🇧🇷", "CHN": "🇨🇳", "D1": "🇩🇪", "D2": "🇩🇪",
@@ -233,7 +194,7 @@ export default {
       }
     }
 
-    // 6. ROTTA PRINCIPALE (DASHBOARD - Grafica identica al tuo Screenshot)
+    // 6. ROTTA PRINCIPALE (DASHBOARD)
     if (url.pathname === "/") {
       try {
         const statusRes = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
@@ -248,7 +209,6 @@ export default {
         const currentSeason = seasonRes ? seasonRes.value : "N.D.";
         const nitroMode = nitroRes ? nitroRes.value : "1";
 
-        // Estrazione delle leghe attive ordinate alfabeticamente per la sigla ID (es. ARG, B1, BRA, D1, E0...)
         const leghe = await dbArchivio.prepare("SELECT id, name, emoji, is_active FROM leagues ORDER BY id ASC").all();
         const listaLeghe = leghe.results || [];
 
@@ -300,7 +260,7 @@ export default {
         
         html += "<div class='container'>";
         
-        // Intestazione GOLDBET MONTECARLO
+        // Intestazione
         html += "<div class='header-title'><span class='white'>GOLDBET</span> <span class='neon'>MONTECARLO</span></div>";
         html += "<div class='subtitle-stats'><span id='stat-totale' class='neon'>" + totalePartite + "</span> PARTITE SALVATE | STAGIONE <span id='stat-season' class='neon'>" + currentSeason + "</span></div>";
         html += "<div class='subtitle-time'>ULTIMO AGGIORNAMENTO <span id='stat-last-sync'>" + lastSync + "</span></div>";
@@ -425,7 +385,7 @@ export default {
 
         html += "function toggleNitro() {";
         html += "  const btn = document.getElementById('btn-nitro');";
-        html += "  btn.classList.toggle('nitro-active');";
+        btn.classList.toggle('nitro-active');
         html += "}";
 
         // Avvio Sincronizzazione asincrona dei soli campionati selezionati (Ciano Neon)
@@ -627,7 +587,7 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
       const divCode = currentBatch[i];
       const slugVal = slugMap[divCode];
 
-      // CONTROLLO ATTIVO DELLA PAUSA AD OGNI STEP
+      // CONTROLLO ATTIVO DELLA PAUSA AD OGNY STEP
       const statusCheck = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
       if (statusCheck && (statusCheck.value === "paused" || statusCheck.value === "idle")) {
         console.log("Processo interrotto o messo in pausa dall'utente.");
@@ -693,18 +653,18 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
       }
 
       // BINARIO 2: Campionati mancanti su Matchesio (Generazione Matematica tramite il tuo archivio)
-      // MODIFICA CORRETTA: La tabella interrogata su archivio_partite si chiama 'matches' (non 'partite')!
+      // MODIFICA CORRETTA: La tabella interrogata su archivio_partite si chiama 'matches' ed è in minuscolo! [3]
       if (!slugVal || matches.length === 0) {
         rilevataStagione = "2025/26";
         
         const teamsRes = await dbArchivio.prepare(
-          "SELECT DISTINCT HomeTeam FROM matches WHERE Div = ?"
+          "SELECT DISTINCT hometeam FROM matches WHERE div = ?"
         ).bind(divCode).all();
 
         const squadreReali = [];
         if (teamsRes.results) {
           for (let j = 0; j < teamsRes.results.length; j++) {
-            squadreReali.push(teamsRes.results[j].HomeTeam);
+            squadreReali.push(teamsRes.results[j].hometeam);
           }
         }
 
@@ -720,7 +680,7 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
                   idFittizio++;
                   
                   const giocataRes = await dbArchivio.prepare(
-                    "SELECT FTHG, FTAG FROM matches WHERE Div = ? AND HomeTeam = ? AND AwayTeam = ? LIMIT 1"
+                    "SELECT fthg, ftag FROM matches WHERE div = ? AND hometeam = ? AND awayteam = ? LIMIT 1"
                   ).bind(divCode, squadreReali[j], squadreReali[k]).all();
 
                   let goalsHome = null;
@@ -729,8 +689,8 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
 
                   if (giocataRes.results && giocataRes.results.length > v) {
                     const g = giocataRes.results[v];
-                    goalsHome = g.FTHG;
-                    goalsAway = g.FTAG;
+                    goalsHome = g.fthg;
+                    goalsAway = g.ftag;
                     status = "Played";
                   }
 
@@ -799,13 +759,13 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
         for (let j = 0; j < numTeams; j++) {
           const tName = teamsList[j];
           const strengthRes = await dbArchivio.prepare(
-            "SELECT att, def, home_adv FROM team WHERE name = ?"
+            "SELECT att, def, h_factor FROM team_stats WHERE team_name = ?"
           ).bind(tName).first();
 
           paramMap[tName] = {
-            att: strengthRes ? strengthRes.att : 1.0,
-            def: strengthRes ? strengthRes.def : 1.0,
-            home_adv: strengthRes ? strengthRes.home_adv : 0.3
+            att: strengthRes && strengthRes.att !== null ? strengthRes.att : 1.0,
+            def: strengthRes && strengthRes.def !== null ? strengthRes.def : 1.0,
+            home_adv: strengthRes && strengthRes.h_factor !== null ? strengthRes.h_factor : 0.3
           };
         }
 
