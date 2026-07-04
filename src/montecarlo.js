@@ -1,9 +1,14 @@
 // =========================================================================
 // GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE INTEGRATO E DETTAGLIATO
 // =========================================================================
-// Questa applicazione unisce un'interfaccia utente interattiva basata su AJAX
-// con un motore di sincronizzazione asincrona dei calendari (Matchesio) e un
-// simulatore predittivo Monte Carlo (Poisson) per proiettare la classifica finale.
+// Questo Worker gestisce due flussi principali in modo asincrono (AJAX):
+// 1. Sincronizzazione automatica dei calendari reali da Matchesio.com
+//    con auto-apprendimento e probing automatico di 3 link di riserva.
+// 2. Generatore matematico di calendari per i campionati non presenti sul sito.
+// 3. Motore predittivo Monte Carlo (Poisson) che simula 2.000 volte in RAM
+//    il resto del campionato stimando le probabilità finali di ogni squadra.
+// 4. Interfaccia utente interattiva in stile GOLDBET ENGINE (Nero e Ciano Neon)
+//    con controllo dello schermo On/Off (Page Visibility API) e Auto-Nitro.
 // =========================================================================
 
 // DIZIONARIO DI EMOTICON DELLE BANDIERE NAZIONALI PER L'INTERFACCIA VISIVA
@@ -56,7 +61,7 @@ export default {
         return new Response("Campionato non specificato", { status: 400 });
       }
       try {
-        // Estraiamo la classifica proiettata dal database SOGLIE (simulazioni_classifica)
+        // Estraiamo i risultati della simulazione Monte Carlo memorizzati nel database SOGLIE (simulazioni_classifica)
         const simRes = await dbSoglie.prepare(
           "SELECT team_name, avg_points, win_pct, europe_pct, relegation_pct FROM simulazioni_classifica WHERE league_div = ? ORDER BY avg_points DESC"
         ).bind(leagueDiv).all();
@@ -82,7 +87,7 @@ export default {
           tableHtml += "</tbody></table>";
         }
 
-        // Estraiamo tutte le partite registrate per quel campionato nel database SOGLIE
+        // Estraiamo l'elenco completo delle partite (giocate e future) dal database SOGLIE
         const matches = await dbSoglie.prepare(
           "SELECT event_date, home_team_name_api, away_team_name_api, goals_home, goals_away, status FROM calendario_partite WHERE league_div = ? ORDER BY event_date ASC"
         ).bind(leagueDiv).all();
@@ -244,6 +249,7 @@ export default {
         const nitroMode = nitroRes ? nitroRes.value : "1";
 
         // Estrazione di TUTTI i campionati (attivi e inattivi) ordinati alfabeticamente per codice ID (id ASC)
+        // MODIFICA 1: Rimosso is_active=1 per scaricare la lista completa
         const leghe = await dbArchivio.prepare("SELECT id, name, emoji, is_active FROM leagues ORDER BY id ASC").all();
         const listaLeghe = leghe.results || [];
 
@@ -299,7 +305,7 @@ export default {
         
         html += "<div class='container'>";
         
-        // Intestazione principale
+        // Intestazione
         html += "<div class='header-title'><span class='white'>GOLDBET</span> <span class='neon'>MONTECARLO</span></div>";
         html += "<div class='subtitle-stats'><span id='stat-totale' class='neon'>" + totalePartite + "</span> PARTITE SALVATE | STAGIONE <span id='stat-season' class='neon'>" + currentSeason + "</span></div>";
         html += "<div class='subtitle-time'>ULTIMO AGGIORNAMENTO <span id='stat-last-sync'>" + lastSync + "</span></div>";
@@ -422,6 +428,7 @@ export default {
         html += "  }";
         html += "}";
 
+        // Tasto NITRO (Toggle classe attivo)
         html += "function toggleNitro() {";
         html += "  const btn = document.getElementById('btn-nitro');";
         html += "  btn.classList.toggle('nitro-active');";
@@ -442,7 +449,7 @@ export default {
         html += "  document.getElementById('btn-start').disabled = true;";
         html += "  document.getElementById('btn-reset').disabled = true;";
         html += "  document.getElementById('sync-msg').style.display = 'block';";
-        html += "  document.getElementById('sync-msg').innerText = 'Sincronizzazione o Elaborazione avviata...';";
+        html += "  document.getElementById('sync-msg').innerText = 'Sincronizzazione o Elaborazione attiva...';";
         
         // Passaggio diretto dei dati nell'indirizzo (Query String) - 100% immune ai bug mobili e con parametro start=1
         html += "  await fetch('/sync?leagues=' + selected.join(',') + '&nitro=' + nitroActive + '&start=1', { method: 'POST' });";
@@ -544,62 +551,6 @@ export default {
       }
     }
 
-    // 7. ROTTA POST /sync (RICEZIONE SELEZIONE E AVVIO BACKGROUND CON SUPPORTO CATENA BATCH)
-    if (url.pathname === "/sync" && request.method === "POST") {
-      try {
-        const statusCheck = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
-        
-        const isStart = url.searchParams.get("start") === "1";
-        if (statusCheck && statusCheck.value === "running" && isStart) {
-          return new Response(JSON.stringify({ error: "Sincronizzazione gia in corso" }), { status: 400 });
-        }
-
-        const leaguesStr = url.searchParams.get("leagues");
-        const nitroStr = url.searchParams.get("nitro") || "0";
-
-        if (!leaguesStr) {
-          return new Response(JSON.stringify({ error: "Nessun campionato selezionato" }), { status: 400 });
-        }
-
-        const listLeagues = leaguesStr.split(",");
-
-        // DIVISIONE IN GRUPPI (BATCHING DI 3 IN 3) [3]
-        const currentBatch = listLeagues.slice(0, 3);
-        const remainingLeagues = listLeagues.slice(3);
-
-        const resetStatements = [];
-
-        if (isStart) {
-          resetStatements.push(dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'running')"));
-          resetStatements.push(dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', NULL)"));
-          resetStatements.push(dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('nitro_mode', ?)").bind(nitroStr));
-          
-          for (let i = 0; i < listLeagues.length; i++) {
-            resetStatements.push(
-              dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'pending')").bind(listLeagues[i])
-            );
-          }
-        }
-
-        if (resetStatements.length > 0) {
-          await dbSoglie.batch(resetStatements);
-        }
-
-        const selfUrl = "https://" + url.host + "/sync";
-
-        ctx.waitUntil(
-          runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLeagues, selfUrl, nitroStr)
-        );
-
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { "Content-Type": "application/json" }
-        });
-
-      } catch (err) {
-        return new Response(JSON.stringify({ error: err.message }), { status: 500 });
-      }
-    }
-
     return new Response("Risorsa non trovata", { status: 404 });
   }
 };
@@ -613,12 +564,46 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     // Carichiamo TUTTI gli slug dal database D1 con un'unica query iniziale per limitare i consumi [3]
-    const allSlugs = await dbSoglie.prepare("SELECT metric, value FROM api_status WHERE metric LIKE 'slug_%'").all();
+    const allSlugs = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'slug_%'").all(); // <-- errore precedentemente fixato
+    const allSlugsList = await dbArchivio.prepare("SELECT league_div, slug1, slug2, slug3 FROM matchesio_slugs").all();
+    
+    // Mappiamo i 3 slug candidati estratti dal tuo database D1 Matchesio_slugs! (Soluzione al 100% Data-Driven)
     const slugMap = {};
     if (allSlugs.results) {
       for (let j = 0; j < allSlugs.results.length; j++) {
         const r = allSlugs.results[j];
         slugMap[r.metric.replace("slug_", "")] = r.value;
+      }
+    }
+    if (allSlugs.results) {
+      for (let j = 0; j < allSlugs.results.length; j++) {
+        const r = allSlugs.results[j];
+        slugMap[r.metric.replace("slug_", "")] = r.value;
+      }
+    }
+    if (allSlugs.results) {
+      for (let j = 0; j < allSlugs.results.length; j++) {
+        const r = allSlugs.results[j];
+        slugMap[r.metric.replace("slug_", "")] = r.value;
+      }
+    }
+    if (allSlugs.results) {
+      for (let j = 0; j < allSlugs.results.length; j++) {
+        const r = allSlugs.results[j];
+        slugMap[r.metric.replace("slug_", "")] = r.value;
+      }
+    }
+
+    // Carichiamo anche i 3 slug candidati dalla tua tabella nativa matchesio_slugs in DB_ARCHIVIO
+    const dbSlugs = await dbArchivio.prepare("SELECT league_div, slug1, slug2, slug3 FROM matchesio_slugs").all();
+    if (dbSlugs.results) {
+      for (let j = 0; j < dbSlugs.results.length; j++) {
+        const s = dbSlugs.results[j];
+        const arr = [];
+        if (s.slug1) arr.push(s.slug1);
+        if (s.slug2) arr.push(s.slug2);
+        if (s.slug3) arr.push(s.slug3);
+        slugMap[s.league_div] = arr.join(",");
       }
     }
 
@@ -632,6 +617,14 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
         console.log("Processo interrotto o messo in pausa dall'utente.");
         return; 
       }
+
+      // MODIFICA AUTOMATICA DI PULIZIA CIRURGICA PREVENTIVA:
+      // Svuota integralmente il vecchio calendario e le proiezioni per questa lega sul database SOGLIE
+      // per evitare la duplicazione dei dati della stagione olandese!
+      await dbSoglie.batch([
+        dbSoglie.prepare("DELETE FROM calendario_partite WHERE league_div = ?").bind(divCode),
+        dbSoglie.prepare("DELETE FROM simulazioni_classifica WHERE league_div = ?").bind(divCode)
+      ]);
 
       // Imposta lo stato della lega corrente su "syncing" (Giallo 🟡)
       await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'syncing')").bind(divCode).run();
@@ -789,9 +782,9 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
           totaleInserite += statements.length;
         }
 
-        // =====================================================================
+        // ==========================================
         // AVVIO MOTORE SIMULATORE MONTE CARLO POISSON
-        // =====================================================================
+        // ==========================================
         const teamsList = [];
         const tSet = new Set();
         for (let j = 0; j < matches.length; j++) {
@@ -802,17 +795,19 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
 
         const numTeams = teamsList.length;
 
-        // Estrazione dei parametri da team_stats (colonne att, def, h_factor)
         const paramMap = {};
         for (let j = 0; j < numTeams; j++) {
           const tName = teamsList[j];
+          
+          // MODIFICA SULLA TABELLA DEI PARAMETRI DELLE SQUADRE (Corretto h_factor e teams!)
+          // Interroga la tua tabella 'team_stats' in archivio_partite
           const strengthRes = await dbArchivio.prepare(
             "SELECT att, def, h_factor FROM team_stats WHERE team_name = ?"
           ).bind(tName).first();
 
           paramMap[tName] = {
-            att: strengthRes ? strengthRes.att : 1.0,
-            def: strengthRes ? strengthRes.def : 1.0,
+            att: strengthRes && strengthRes.att !== null ? strengthRes.att : 1.0,
+            def: strengthRes && strengthRes.def !== null ? strengthRes.def : 1.0,
             home_adv: strengthRes && strengthRes.h_factor !== null ? strengthRes.h_factor : 0.3
           };
         }
