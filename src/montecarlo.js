@@ -1,11 +1,11 @@
 // =========================================================================
-// GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE OTTIMIZZATO E STRUTTURATO
+// GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE OTTIMIZZATO E DETTAGLIATO
 // =========================================================================
 // Sincronizzatore e simulatore predittivo sequenziale ad altissime prestazioni.
-// Previene il superamento dei limiti di Cloudflare delegando il flusso al browser.
+// Elimina ogni rischio di timeout delegando la coda di calcolo direttamente al browser.
 // =========================================================================
 
-// Dizionario statico contenente le emoji delle bandiere dei vari campionati
+// Dizionario statico contenente le emoji delle bandiere per i campionati
 const LEAGUE_FLAGS = {
   "ARG": "🇦🇷", "B1": "🇧🇪", "BRA": "🇧🇷", "CHN": "🇨🇳", "D1": "🇩🇪", "D2": "🇩🇪",
   "DNK": "🇩🇰", "IRL": "🇮🇪", "MEX": "🇲🇽", "NOR": "🇳🇴", "P1": "🇵🇹", "RUS": "🇷🇺",
@@ -326,7 +326,8 @@ export default {
             html += "</div>";
             html += "</div>";
           } else {
-            html += "<div class='league-item' id='card-" + code + "' onclick=\"toggleLeague('" + code + "')\" data-active='1'>";
+            // Genera la card attiva con onclick sicuro senza l'uso di barre rovesciate o caratteri di escape
+            html += "<div class='league-item' id='card-" + code + "' onclick='toggleLeague(" + '"' + code + '"' + ")' data-active='1'>";
             html += "<div class='league-header'>";
             html += "<span class='title'><span>" + flag + "</span> " + fullLabel + "</span>";
             html += "<span id='pct-" + code + "' class='pct'>" + pct + "</span>";
@@ -482,13 +483,13 @@ export default {
         html += "  setTimeout(processNextInQueue, delayTime);";
         html += "}";
 
-        // Mette in pausa l'esecuzione della coda client-side
+        // Mette in pausa l'esecuzione della coda client-side (Rimossi gli apostrofi con escape per evitare errori JS)
         html += "function pauseSequentialSync() {";
         html += "  isSyncRunning = false;";
         html += "  releaseWakeLock();";
         html += "  document.getElementById('btn-start').disabled = false;";
         html += "  document.getElementById('btn-reset').disabled = false;";
-        html += "  document.getElementById('sync-msg').innerText = 'Processo messo in pausa dall\'utente.';";
+        html += "  document.getElementById('sync-msg').innerText = 'Processo in pausa.';";
         html += "}";
 
         // Conclude la catena impostando lo stato finale corretto
@@ -501,9 +502,9 @@ export default {
         html += "  updateStatus();";
         html += "}";
 
-        // Richiede un reset completo del database via asincrona
+        // Richiede un reset completo del database via asincrona (Rimosso l'apostrofo con escape per stabilità del codice)
         html += "async function triggerReset() {";
-        html += "  if (!confirm('Vuoi davvero cancellare l\'intero archivio del calendario e le simulazioni?')) return;";
+        html += "  if (!confirm('Vuoi davvero cancellare il calendario e le simulazioni?')) return;";
         html += "  await fetch('/reset', { method: 'POST' });";
         html += "  updateStatus();";
         html += "}";
@@ -520,12 +521,14 @@ export default {
         html += "    if (elLastSync) elLastSync.innerText = data.lastSync;";
         html += "    if (elTotale) elTotale.innerText = data.totale;";
         html += "    if (elSeason) elSeason.innerText = data.season;";
-        html += "    if (data.error) {";
-        html += "      document.getElementById('error-box').style.display = 'block';";
-        html += "      document.getElementById('error-box').innerHTML = '<strong>Ultimo Errore:</strong> ' + data.error;";
-        html += "    } else {";
-        html += "      document.getElementById('error-box').style.display = 'none';";
-        html += "    }";
+        if (syncStatus === "running") {
+          html += "    if (data.error) {";
+          html += "      document.getElementById('error-box').style.display = 'block';";
+          html += "      document.getElementById('error-box').innerHTML = '<strong>Ultimo Errore:</strong> ' + data.error;";
+          html += "    } else {";
+          html += "      document.getElementById('error-box').style.display = 'none';";
+          html += "    }";
+        }
         html += "  } catch(e) {}";
         html += "}";
 
@@ -554,16 +557,16 @@ export default {
       try {
         let rilevataStagione = "N.D.";
 
-        // Segna lo stato del campionato come 'syncing' sul DB
+        // Segna lo stato del campionato come 'syncing' sul DB SOGLIE
         await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'syncing')").bind(divCode).run();
 
-        // Pulizia dei dati vecchi per evitare accumuli obsoleti nel DB SOGLIE
+        // Pulizia preventiva dei dati vecchi per evitare duplicazioni o accavallamenti
         await dbSoglie.batch([
           dbSoglie.prepare("DELETE FROM calendario_partite WHERE league_div = ?").bind(divCode),
           dbSoglie.prepare("DELETE FROM simulazioni_classifica WHERE league_div = ?").bind(divCode)
         ]);
 
-        // Caricamento dello slug di Matchesio associato a questo campionato
+        // Caricamento dei 3 indirizzi (slug) alternativi associati al campionato in ARCHIVIO
         let slugVal = null;
         const slugDbRes = await dbArchivio.prepare("SELECT slug1, slug2, slug3 FROM matchesio_slugs WHERE league_div = ?").bind(divCode).first();
         if (slugDbRes) {
@@ -576,7 +579,7 @@ export default {
 
         let matches = [];
 
-        // BINARIO A: Importazione da matchesio.com se esiste lo slug
+        // BINARIO A: Importazione automatica da matchesio.com se esiste lo slug di riferimento
         if (slugVal) {
           const candidates = slugVal.split(",");
           let apiResponse = null;
@@ -628,7 +631,7 @@ export default {
           }
         }
 
-        // BINARIO B: Generazione combinatoria matematica in mancanza dello slug
+        // BINARIO B: Generazione combinatoria interna se non esiste lo slug su Matchesio
         if (!slugVal || matches.length === 0) {
           const seasonRes = await dbArchivio.prepare(
             "SELECT MAX(season) as ultima FROM matches WHERE div = ?"
@@ -691,7 +694,7 @@ export default {
           }
         }
 
-        // Salvataggio effettivo del calendario scaricato/generato su DB SOGLIE
+        // Scrittura cumulativa del calendario ottenuto all'interno di DB SOGLIE
         if (matches.length > 0) {
           const queryInsert = "INSERT OR REPLACE INTO calendario_partite (fixture_id, league_id, league_div, round, event_date, home_team_name_api, home_team_id_local, away_team_name_api, away_team_id_local, goals_home, goals_away, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
           const statements = [];
@@ -718,7 +721,7 @@ export default {
           await dbSoglie.batch(statements);
 
           // -----------------------------------------------------------------
-          // ELABORAZIONE DEL MOTORE DI SIMULAZIONE POISSON + MONTE CARLO (2.000 CORSE)
+          // MOTORE PREVENTIVO DI SIMULAZIONE BASATO SU POISSON E MONTE CARLO
           // -----------------------------------------------------------------
           const teamsList = [];
           const tSet = new Set();
@@ -734,7 +737,7 @@ export default {
             teamToIndex[teamsList[j]] = j;
           }
 
-          // Carica i parametri di forza attacco, difesa e fattore campo da DB ARCHIVIO
+          // Estrae i parametri di forza attacco, difesa e fattore campo da DB ARCHIVIO
           const paramList = [];
           for (let j = 0; j < numTeams; j++) {
             const tName = teamsList[j];
@@ -756,7 +759,7 @@ export default {
           const basePoints = new Array(numTeams).fill(0);
           const unplayedList = [];
 
-          // Separa i match passati dai match futuri, calcolando per i futuri le probabilità di Poisson
+          // Separa i risultati consolidati dai futuri, calcolandone la probabilità per la simulazione
           for (let j = 0; j < matches.length; j++) {
             const m = matches[j];
             const homeIdx = teamToIndex[m.home];
@@ -800,13 +803,12 @@ export default {
             }
           }
 
-          // Strutture dati per l'accumulo dei risultati dei 2.000 cicli Monte Carlo
           const totalPoints = new Array(numTeams).fill(0);
           const wins = new Array(numTeams).fill(0);
           const europe = new Array(numTeams).fill(0);
           const relegation = new Array(numTeams).fill(0);
 
-          // Esecuzione ottimizzata delle 2.000 simulazioni in RAM
+          // Esecuzione immediata in memoria di 2.000 stagioni complete per massima precisione
           for (let sim = 0; sim < 2000; sim++) {
             const simPoints = new Array(numTeams);
             for (let t = 0; t < numTeams; t++) {
@@ -827,7 +829,6 @@ export default {
               }
             }
 
-            // Ordinamento ad alte prestazioni basato sugli indici delle squadre
             const indices = [];
             for (let t = 0; t < numTeams; t++) {
               indices.push(t);
@@ -845,7 +846,7 @@ export default {
             }
           }
 
-          // Salvataggio dei risultati statistici cumulati nel DB SOGLIE
+          // Genera il pacchetto delle query di salvataggio dei dati simulati nel DB SOGLIE
           const simStatements = [];
           const querySimInsert = "INSERT OR REPLACE INTO simulazioni_classifica (league_div, team_name, avg_points, win_pct, europe_pct, relegation_pct) VALUES (?, ?, ?, ?, ?, ?)";
           
@@ -870,7 +871,7 @@ export default {
           await dbSoglie.batch(simStatements);
         }
 
-        // Aggiorna lo stato della lega a "completed"
+        // Imposta lo stato del singolo campionato a completed (100.0%)
         await dbSoglie.batch([
           dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'completed')").bind(divCode),
           dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('current_season', ?)").bind(rilevataStagione),
@@ -882,7 +883,7 @@ export default {
         });
 
       } catch (err) {
-        // Gestione pulita e salvataggio degli errori nel database di stato
+        // Registra eventuali messaggi di errore riscontrati nella tabella del database di stato
         await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', ?)").bind(err.message).run();
         return new Response(JSON.stringify({ success: false, error: err.message }), {
           status: 500,
