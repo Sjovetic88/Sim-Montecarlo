@@ -1,17 +1,18 @@
 // =========================================================================
 // GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE INTEGRATO E DETTAGLIATO
 // =========================================================================
-// Questo Worker gestisce due flussi principali in modo asincrono (AJAX):
-// 1. Sincronizzazione automatica dei calendari reali da Matchesio.com
-//    con auto-apprendimento e probing automatico di 3 link di riserva.
-// 2. Generatore matematico di calendari per i campionati non presenti sul sito.
-// 3. Motore predittivo Monte Carlo (Poisson) che simula 2.000 volte in RAM
-//    il resto del campionato stimando le probabilità finali di ogni squadra.
-// 4. Interfaccia utente interattiva in stile GOLDBET ENGINE (Nero e Ciano Neon)
-//    con controllo dello schermo On/Off (Page Visibility API) e Auto-Nitro.
+// Questo Worker esegue due flussi asincroni principali (AJAX) coordinati:
+// 1. Sincronizzazione automatica dei calendari di Matchesio.com con sistema
+//    di auto-apprendimento e probing (sondaggio) sequenziale su 3 link di riserva.
+// 2. Generatore combinatorio per i campionati mancanti su Matchesio, estraendo
+//    le squadre partecipanti direttamente dallo storico corrente del database.
+// 3. Simulatore predittivo Monte Carlo basato sulla distribuzione di Poisson
+//    che simula 2.000 volte in RAM ogni incontro rimanente della stagione.
+// 4. Interfaccia utente dinamica (Nero e Ciano Neon) con selezione tramite
+//    bordo fluorescente, accordion on-demand e Page Visibility API.
 // =========================================================================
 
-// DIZIONARIO EMOTICON BANDIERE NAZIONALI PER L'INTERFACCIA GRAFICA
+// DIZIONARIO STATICO DELLE BANDIERE EMOJI PER LA VISUALIZZAZIONE GRAFICA
 const LEAGUE_FLAGS = {
   "ARG": "🇦🇷", "B1": "🇧🇪", "BRA": "🇧🇷", "CHN": "🇨🇳", "D1": "🇩🇪", "D2": "🇩🇪",
   "DNK": "🇩🇰", "IRL": "🇮🇪", "MEX": "🇲🇽", "NOR": "🇳🇴", "P1": "🇵🇹", "RUS": "🇷🇺",
@@ -19,7 +20,7 @@ const LEAGUE_FLAGS = {
   "I2": "🇮🇹", "SP1": "🇪🇸", "F1": "🇫🇷", "N1": "🇳🇱", "G1": "🇬🇷", "AUT": "🇦🇹", "SWZ": "🇨🇭"
 };
 
-// DIZIONARIO NOMI CAMPIONATI IN MAIUSCOLO PER LA DASHBOARD
+// DIZIONARIO STATICO DEI NOMI COMPLETI DEI CAMPIONATI IN MAIUSCOLO
 const LEAGUE_NAMES = {
   "ARG": "ARGENTINA", "B1": "BELGIUM", "BRA": "BRAZIL", "CHN": "CHINA", "D1": "GERMANY",
   "D2": "GERMANY D2", "DNK": "DENMARK", "IRL": "IRELAND", "MEX": "MEXICO", "NOR": "NORWAY",
@@ -28,32 +29,32 @@ const LEAGUE_NAMES = {
   "I2": "ITALY SERIE B", "SP1": "SPAIN LA LIGA", "F1": "FRANCE LIGUE 1", "N1": "NETHERLANDS EREDIVISIE"
 };
 
-// FUNZIONE MATEMATICA DI SUPPORTO: Calcola il fattoriale di un numero intero
+// FUNZIONE DI SUPPORTO: Calcola il fattoriale di un numero (necessario per Poisson)
 function factorial(n) {
   let res = 1;
   for (let i = 2; i <= n; i++) res *= i;
   return res;
 }
 
-// FUNZIONE MATEMATICA DI SUPPORTO: Calcola la distribuzione di probabilità di Poisson
-// Usata dal simulatore per stimare la probabilità di segnare K gol in base all'attesa Lambda
+// FUNZIONE DI SUPPORTO: Calcola la probabilità di Poisson per K eventi data l'attesa Lambda
+// Usata per stimare le probabilità di segnare 0, 1, 2, 3, 4, 5 gol in una partita
 function poissonProb(k, lambda) {
   return (Math.pow(lambda, k) * Math.exp(-lambda)) / factorial(k);
 }
 
 export default {
-  // -------------------------------------------------------------------------
-  // GESTORE PRINCIPALE DELLE RICHIESTE HTTP (Fetch Handler)
-  // Smista le richieste del browser verso le diverse rotte del Worker
-  // -------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // FETCH HANDLER: Gestisce l'ingresso delle richieste HTTP nel Worker
+  // ---------------------------------------------------------------------------
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const dbArchivio = env.DB_ARCHIVIO;
     const dbSoglie = env.DB_SOGLIE;
+    const apiKey = env.API_FOOTBALL_KEY || "a045158f354f22a763d193b99f52ae48";
 
     // -------------------------------------------------------------------------
     // ROTTA 1: /matches (Accordion on-demand)
-    // Ritorna la tabella HTML con la classifica simulata (se presente) e il calendario
+    // Ritorna le partite reali e le proiezioni simulate in formato tabella HTML
     // -------------------------------------------------------------------------
     if (url.pathname === "/matches") {
       const leagueDiv = url.searchParams.get("league");
@@ -61,14 +62,14 @@ export default {
         return new Response("Campionato non specificato", { status: 400 });
       }
       try {
-        // Estraiamo i risultati della simulazione Monte Carlo memorizzati nel database SOGLIE (simulazioni_classifica)
+        // Estraiamo la classifica simulata dal database SOGLIE (simulazioni_classifica)
         const simRes = await dbSoglie.prepare(
           "SELECT team_name, avg_points, win_pct, europe_pct, relegation_pct FROM simulazioni_classifica WHERE league_div = ? ORDER BY avg_points DESC"
         ).bind(leagueDiv).all();
 
         let tableHtml = "";
 
-        // Se esistono già simulazioni calcolate nel database, generiamo la tabella della Classifica Proiettata
+        // Se esistono proiezioni simulate nel database, stampiamo la tabella Monte Carlo
         if (simRes.results && simRes.results.length > 0) {
           tableHtml += "<h3>Classifica Proiettata (Proiezione Monte Carlo)</h3>";
           tableHtml += "<table style='width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 12px; color: #cbd5e1;'>";
@@ -78,7 +79,7 @@ export default {
             const s = simRes.results[i];
             tableHtml += "<tr style='border-bottom: 1px solid #1f2937;'>";
             tableHtml += "<td style='padding: 6px; font-weight: bold; color: #fff;'>" + s.team_name + "</td>";
-            tableHtml += "<td style='padding: 6px; text-align: center; font-weight: bold;'>" + s.avg_points.toFixed(1) + "</td>";
+            tableHtml += "<td style='padding: 6px; text-align: center; font-weight: bold;'> " + s.avg_points.toFixed(1) + "</td>";
             tableHtml += "<td style='padding: 6px; text-align: center; color: #00ebff; font-weight: bold;'>" + s.win_pct.toFixed(1) + "%</td>";
             tableHtml += "<td style='padding: 6px; text-align: center; color: #10b981; font-weight: bold;'>" + s.europe_pct.toFixed(1) + "%</td>";
             tableHtml += "<td style='padding: 6px; text-align: center; color: #ef4444; font-weight: bold;'>" + s.relegation_pct.toFixed(1) + "%</td>";
@@ -87,7 +88,7 @@ export default {
           tableHtml += "</tbody></table>";
         }
 
-        // Estraiamo l'elenco completo delle partite (giocate e future) dal database SOGLIE
+        // Estraiamo il calendario delle partite reali/simulate salvato nel database SOGLIE
         const matches = await dbSoglie.prepare(
           "SELECT event_date, home_team_name_api, away_team_name_api, goals_home, goals_away, status FROM calendario_partite WHERE league_div = ? ORDER BY event_date ASC"
         ).bind(leagueDiv).all();
@@ -125,8 +126,8 @@ export default {
     }
 
     // -------------------------------------------------------------------------
-    // ROTTA 2: /status (Stato JSON per Long Polling)
-    // Ritorna le metriche globali e gli stati individuali delle spie dei campionati
+    // ROTTA 2: /status (Long Polling JSON)
+    // Ritorna le metriche globali e lo stato delle singole spie dei campionati
     // -------------------------------------------------------------------------
     if (url.pathname === "/status") {
       try {
@@ -174,8 +175,8 @@ export default {
     }
 
     // -------------------------------------------------------------------------
-    // ROTTA 3: /mode (Rilevamento stato schermo On/Off)
-    // Riceve lo stato di visibilità dello smartphone (visible / hidden) e aggiorna il DB D1
+    // ROTTA 3: /mode (Gestore visibilità dello schermo On/Off)
+    // Aggiorna lo stato di nitro_mode nel DB (1 = Schermo On, 0 = Schermo Off)
     // -------------------------------------------------------------------------
     if (url.pathname === "/mode" && request.method === "POST") {
       try {
@@ -192,7 +193,7 @@ export default {
 
     // -------------------------------------------------------------------------
     // ROTTA 4: /pause (Segnale di interruzione)
-    // Imposta lo stato globale a 'paused' per forzare l'arresto del loop di background
+    // Imposta lo stato su 'paused' per bloccare l'esecuzione in background al termine del campionato corrente
     // -------------------------------------------------------------------------
     if (url.pathname === "/pause" && request.method === "POST") {
       try {
@@ -207,7 +208,7 @@ export default {
 
     // -------------------------------------------------------------------------
     // ROTTA 5: /reset (Svuotamento completo del database)
-    // Trunca le tabelle del calendario e delle classifiche e reimposta lo stato generale a 'idle'
+    // Ripristina l'intero database SOGLIE cancellando partite e simulazioni
     // -------------------------------------------------------------------------
     if (url.pathname === "/reset" && request.method === "POST") {
       try {
@@ -231,8 +232,8 @@ export default {
     }
 
     // -------------------------------------------------------------------------
-    // ROTTA 6: / (DASHBOARD PRINCIPALE - INTERFACCIA WEB DI GOLDBET MONTECARLO)
-    // Genera l'HTML e il CSS in stile GOLDBET ENGINE con la barra dei comandi asincroni
+    // ROTTA 6: / (DASHBOARD PRINCIPALE - INTERFACCIA UTENTE WEB)
+    // Disegna l'intero pannello in stile GOLDBET ENGINE (Nero e Ciano Neon)
     // -------------------------------------------------------------------------
     if (url.pathname === "/") {
       try {
@@ -248,7 +249,7 @@ export default {
         const currentSeason = seasonRes ? seasonRes.value : "N.D.";
         const nitroMode = nitroRes ? nitroRes.value : "1";
 
-        // Estrazione di TUTTI i campionati (attivi e inattivi) ordinati alfabeticamente per codice ID (id ASC)
+        // Estrae tutti i campionati configurati in ARCHIVIO_PARTITE ordinati alfabeticamente per sigla (id ASC)
         const leghe = await dbArchivio.prepare("SELECT id, name, emoji, is_active FROM leagues ORDER BY id ASC").all();
         const listaLeghe = leghe.results || [];
 
@@ -272,10 +273,10 @@ export default {
         html += ".league-item { background: #0f172a; border: 1px solid #1e293b; margin-bottom: 14px; padding: 16px; border-radius: 8px; cursor: pointer; transition: background 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s; position: relative; }";
         html += ".league-item:hover { background: #1e293b; }";
         
-        // Bordo Ciano Neon per la card selezionata
+        // Bordo neon ciano attivo per le card dei campionati selezionati
         html += ".league-item.selected { border-color: #00ebff !important; box-shadow: 0 0 10px rgba(0, 235, 255, 0.4); }";
         
-        // Stile per i campionati inattivi (locked)
+        // Stile per i campionati inattivi (disattivati con emoji divieto)
         html += ".league-item.inactive { opacity: 0.35; cursor: not-allowed; border-color: #0f172a; }";
         html += ".league-item.inactive:hover { background: #0f172a; }";
         
@@ -290,7 +291,7 @@ export default {
         html += ".status-running-msg { text-align: center; color: #f59e0b; font-size: 13px; font-weight: bold; margin-bottom: 15px; }";
         html += ".error-box { background: #ef444422; border-left: 4px solid #ef4444; padding: 12px; margin-bottom: 20px; border-radius: 4px; color: #fca5a5; font-size: 13px; }";
         
-        // Tab Bar Inferiore fissa con i 5 pulsanti, completamente asincroni (senza form)
+        // Tab Bar Inferiore fissa a 5 pulsanti ad uso mobile
         html += ".bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #090d16; border-top: 1px solid #1e293b; display: flex; justify-content: space-around; align-items: center; padding: 10px 0; z-index: 1000; box-shadow: 0 -4px 10px rgba(0,0,0,0.5); }";
         html += ".nav-btn { background: none; border: none; display: flex; flex-direction: column; align-items: center; color: #64748b; cursor: pointer; text-decoration: none; padding: 4px 10px; width: 20%; transition: color 0.2s, filter 0.2s; }";
         html += ".nav-btn-active { color: #00ebff !important; }";
@@ -304,13 +305,13 @@ export default {
         
         html += "<div class='container'>";
         
-        // Logo Principale
+        // Struttura Intestazione
         html += "<div class='header-title'><span class='white'>GOLDBET</span> <span class='neon'>MONTECARLO</span></div>";
         html += "<div class='subtitle-stats'><span id='stat-totale' class='neon'>" + totalePartite + "</span> PARTITE SALVATE | STAGIONE <span id='stat-season' class='neon'>" + currentSeason + "</span></div>";
         html += "<div class='subtitle-time'>ULTIMO AGGIORNAMENTO <span id='stat-last-sync'>" + lastSync + "</span></div>";
 
         if (syncStatus === "running") {
-          html += "<div id='sync-msg' class='status-running-msg'>Sincronizzazione o Elaborazione in corso... ricarica tra poco per seguire l'avanzamento.</div>";
+          html += "<div id='sync-msg' class='status-running-msg'>Sincronizzazione o Elaborazione attiva... ricarica tra poco per seguire l'avanzamento.</div>";
         } else {
           html += "<div id='sync-msg' style='display:none;' class='status-running-msg'></div>";
         }
@@ -321,7 +322,7 @@ export default {
           html += "<div id='error-box' class='error-box' style='display:none;'></div>";
         }
 
-        // Elenco campionati (TUTTI DESELEZIONATI all'avvio - MODIFICA 3)
+        // Elenco campionati (Partono interamente spenti/deselezionati)
         html += "<div class='league-list'>";
         
         for (let i = 0; i < listaLeghe.length; i++) {
@@ -339,9 +340,7 @@ export default {
             pct = "100.0%";
           }
 
-          // MODIFICA 4: Rimossa emoticon pallone ⚽
           const flag = l.emoji || "";
-          // MODIFICA RICHIESTA: Visualizzazione nel formato "[FLAG] [ID] [NAME]" (es. "🇩🇪 D1 Bundesliga")
           const fullLabel = code + " " + l.name;
 
           const lastMatchRes = await dbSoglie.prepare("SELECT MAX(event_date) as ultima FROM calendario_partite WHERE league_div = ?").bind(code).first();
@@ -359,7 +358,7 @@ export default {
             html += "</div>";
             html += "</div>";
           } else {
-            // Se attivo, impostiamo comportamento standard (Deselezionato all'avvio - MODIFICA 2: Tocco ciano neon ed espansione)
+            // Se attivo, impostiamo comportamento standard (Deselezionato all'avvio)
             html += "<div class='league-item' id='card-" + code + "' onclick=\"toggleLeague('" + code + "')\" data-active='1'>";
             html += "<div class='league-header'>";
             html += "<span class='title'><span>" + flag + "</span> " + fullLabel + "</span>";
@@ -392,7 +391,7 @@ export default {
         html += "<script>";
         html += "let globalStatus = '" + syncStatus + "';";
 
-        // Accendi/Apri e Spegni/Chiudi dinamico (Nessuna barra rovesciata!)
+        // Accendi/Apri e Spegni/Chiudi dinamico
         html += "async function toggleLeague(code) {";
         html += "  const card = document.getElementById('card-' + code);";
         html += "  const el = document.getElementById('content-' + code);";
@@ -429,7 +428,7 @@ export default {
         html += "  }";
         html += "}";
 
-        // Tasto NITRO (Toggle classe attivo - INTERAMENTE RACCHIUSO NELLA STRINGA)
+        // Tasto NITRO (Toggle classe attivo - RIGOROSAMENTE RACCHIUSO NELLA STRINGA)
         html += "function toggleNitro() {";
         html += "  const btn = document.getElementById('btn-nitro');";
         html += "  btn.classList.toggle('nitro-active');";
@@ -450,7 +449,7 @@ export default {
         html += "  document.getElementById('btn-start').disabled = true;";
         html += "  document.getElementById('btn-reset').disabled = true;";
         html += "  document.getElementById('sync-msg').style.display = 'block';";
-        html += "  document.getElementById('sync-msg').innerText = 'Sincronizzazione o Elaborazione avviata...';";
+        html += "  document.getElementById('sync-msg').innerText = 'Sincronizzazione o Elaborazione attiva...';";
         
         // Passaggio diretto dei dati nell'indirizzo (Query String) - 100% immune ai bug mobili e con parametro start=1
         html += "  await fetch('/sync?leagues=' + selected.join(',') + '&nitro=' + nitroActive + '&start=1', { method: 'POST' });";
