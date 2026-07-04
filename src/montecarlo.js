@@ -271,11 +271,7 @@ export default {
         
         html += ".league-item { background: #0f172a; border: 1px solid #1e293b; margin-bottom: 14px; padding: 16px; border-radius: 8px; cursor: pointer; transition: background 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s; position: relative; }";
         html += ".league-item:hover { background: #1e293b; }";
-        
-        // Bordo Ciano Neon per la card selezionata
         html += ".league-item.selected { border-color: #00ebff !important; box-shadow: 0 0 10px rgba(0, 235, 255, 0.4); }";
-        
-        // Stile per i campionati inattivi (locked)
         html += ".league-item.inactive { opacity: 0.35; cursor: not-allowed; border-color: #0f172a; }";
         html += ".league-item.inactive:hover { background: #0f172a; }";
         
@@ -310,7 +306,7 @@ export default {
         html += "<div class='subtitle-time'>ULTIMO AGGIORNAMENTO <span id='stat-last-sync'>" + lastSync + "</span></div>";
 
         if (syncStatus === "running") {
-          html += "<div id='sync-msg' class='status-running-msg'>Sincronizzazione o Elaborazione in corso... ricarica tra poco per seguire l'avanzamento.</div>";
+          html += "<div id='sync-msg' class='status-running-msg'>Sincronizzazione o Elaborazione attiva... ricarica tra poco per seguire l'avanzamento.</div>";
         } else {
           html += "<div id='sync-msg' style='display:none;' class='status-running-msg'></div>";
         }
@@ -427,7 +423,7 @@ export default {
         html += "  }";
         html += "}";
 
-        // Tasto NITRO (Toggle classe attivo - MODIFICATO PER EVITARE REFUSI SERVER-SIDE)
+        // Tasto NITRO (Toggle classe attivo - RIGOROSAMENTE RACCHIUSO NELLA STRINGA)
         html += "function toggleNitro() {";
         html += "  const btn = document.getElementById('btn-nitro');";
         html += "  btn.classList.toggle('nitro-active');";
@@ -437,7 +433,7 @@ export default {
         // Utilizziamo unicamente le Query di indirizzo per evitare qualsiasi problema sui browser degli smartphone
         html += "async function startSync() {";
         html += "  if (globalStatus === 'running') return;";
-        const selectedCards = "document.querySelectorAll('.league-item.selected[data-active=\"1\"]')";
+        const selectedCards = "document.querySelectorAll('.league-item.selected[data-active=1]')";
         html += "  const selected = Array.from(" + selectedCards + ").map(c => c.id.replace('card-', ''));";
         html += "  if (selected.length === 0) {";
         html += "    alert('Tocca i campionati per accenderlo di ciano prima di avviare!');";
@@ -550,62 +546,6 @@ export default {
       }
     }
 
-    // 7. ROTTA POST /sync (RICEZIONE SELEZIONE E AVVIO BACKGROUND CON SUPPORTO CATENA BATCH)
-    if (url.pathname === "/sync" && request.method === "POST") {
-      try {
-        const statusCheck = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric = 'status'").first();
-        
-        const isStart = url.searchParams.get("start") === "1";
-        if (statusCheck && statusCheck.value === "running" && isStart) {
-          return new Response(JSON.stringify({ error: "Sincronizzazione gia in corso" }), { status: 400 });
-        }
-
-        const leaguesStr = url.searchParams.get("leagues");
-        const nitroStr = url.searchParams.get("nitro") || "0";
-
-        if (!leaguesStr) {
-          return new Response(JSON.stringify({ error: "Nessun campionato selezionato" }), { status: 400 });
-        }
-
-        const listLeagues = leaguesStr.split(",");
-
-        // DIVISIONE IN GRUPPI (BATCHING DI 3 IN 3) [3]
-        const currentBatch = listLeagues.slice(0, 3);
-        const remainingLeagues = listLeagues.slice(3);
-
-        const resetStatements = [];
-
-        if (isStart) {
-          resetStatements.push(dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'running')"));
-          resetStatements.push(dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', NULL)"));
-          resetStatements.push(dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('nitro_mode', ?)").bind(nitroStr));
-          
-          for (let i = 0; i < listLeagues.length; i++) {
-            resetStatements.push(
-              dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'pending')").bind(listLeagues[i])
-            );
-          }
-        }
-
-        if (resetStatements.length > 0) {
-          await dbSoglie.batch(resetStatements);
-        }
-
-        const selfUrl = "https://" + url.host + "/sync";
-
-        ctx.waitUntil(
-          runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLeagues, selfUrl, nitroStr)
-        );
-
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { "Content-Type": "application/json" }
-        });
-
-      } catch (err) {
-        return new Response(JSON.stringify({ error: err.message }), { status: 500 });
-      }
-    }
-
     return new Response("Risorsa non trovata", { status: 404 });
   }
 };
@@ -618,8 +558,8 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
     
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    // Carichiamo TUTTI gli slug dal database D1 con un'unica query iniziale per limitare i consumi [3]
-    const allSlugs = await dbSoglie.prepare("SELECT value FROM api_status WHERE metric LIKE 'slug_%'").all();
+    // MODIFICA FONDAMENTALE: Carichiamo sia metric che value per evitare l'eccezione 'replace' [1]!
+    const allSlugs = await dbSoglie.prepare("SELECT metric, value FROM api_status WHERE metric LIKE 'slug_%'").all();
     
     // Mappiamo i 3 slug candidati estratti dal tuo database D1 Matchesio_slugs! (Soluzione al 100% Data-Driven)
     const slugMap = {};
@@ -835,15 +775,15 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
         for (let j = 0; j < numTeams; j++) {
           const tName = teamsList[j];
           
-          // MODIFICA SULLA TABELLA DEI PARAMETRI DELLE SQUADRE (Corretto h_factor e teams!)
-          // Interroga la tua tabella 'team_stats' in archivio_partite
+          // MODIFICA SULLA TABELLA DEI PARAMETRI DELLE SQUADRE
+          // Interroga la tua tabella 'team_stats' in archivio_partite usando h_factor!
           const strengthRes = await dbArchivio.prepare(
             "SELECT att, def, h_factor FROM team_stats WHERE team_name = ?"
           ).bind(tName).first();
 
           paramMap[tName] = {
-            att: strengthRes && strengthRes.att !== null ? strengthRes.att : 1.0,
-            def: strengthRes && strengthRes.def !== null ? strengthRes.def : 1.0,
+            att: strengthRes ? strengthRes.att : 1.0,
+            def: strengthRes ? strengthRes.def : 1.0,
             home_adv: strengthRes && strengthRes.h_factor !== null ? strengthRes.h_factor : 0.3
           };
         }
