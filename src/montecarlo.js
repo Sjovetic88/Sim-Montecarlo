@@ -1,14 +1,9 @@
 // =========================================================================
-// GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE INTEGRATO
+// GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE INTEGRATO E DETTAGLIATO
 // =========================================================================
-// Questo Worker gestisce due flussi principali in modo asincrono (AJAX):
-// 1. Sincronizzazione automatica dei calendari reali da Matchesio.com
-//    con auto-apprendimento e probing automatico di 3 link di riserva.
-// 2. Generatore matematico di calendari per i campionati non presenti sul sito.
-// 3. Motore predittivo Monte Carlo (Poisson) che simula 2.000 volte in RAM
-//    il resto del campionato stimando le probabilità finali di ogni squadra.
-// 4. Interfaccia utente interattiva in stile GOLDBET ENGINE (Nero e Ciano Neon)
-//    con controllo dello schermo On/Off (Page Visibility API) e Auto-Nitro.
+// Questa applicazione unisce un'interfaccia utente interattiva basata su AJAX
+// con un motore di sincronizzazione asincrona dei calendari (Matchesio) e un
+// simulatore predittivo Monte Carlo (Poisson) per proiettare la classifica finale.
 // =========================================================================
 
 // DIZIONARIO DI EMOTICON DELLE BANDIERE NAZIONALI PER L'INTERFACCIA VISIVA
@@ -42,15 +37,18 @@ function poissonProb(k, lambda) {
 }
 
 export default {
+  // -------------------------------------------------------------------------
+  // GESTORE PRINCIPALE DELLE RICHIESTE HTTP (Fetch Handler)
+  // Smista le richieste del browser verso le diverse rotte del Worker
+  // -------------------------------------------------------------------------
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const dbArchivio = env.DB_ARCHIVIO;
     const dbSoglie = env.DB_SOGLIE;
-    const apiKey = env.API_FOOTBALL_KEY || "a045158f354f22a763d193b99f52ae48";
 
     // -------------------------------------------------------------------------
     // ROTTA 1: /matches (Accordion on-demand)
-    // Ritorna l'HTML con la classifica proiettata e l'elenco partite del campionato
+    // Ritorna la tabella HTML con la classifica simulata (se presente) e il calendario
     // -------------------------------------------------------------------------
     if (url.pathname === "/matches") {
       const leagueDiv = url.searchParams.get("league");
@@ -58,14 +56,14 @@ export default {
         return new Response("Campionato non specificato", { status: 400 });
       }
       try {
-        // Estraiamo i risultati della simulazione Monte Carlo memorizzati nel database SOGLIE
+        // Estraiamo la classifica proiettata dal database SOGLIE (simulazioni_classifica)
         const simRes = await dbSoglie.prepare(
           "SELECT team_name, avg_points, win_pct, europe_pct, relegation_pct FROM simulazioni_classifica WHERE league_div = ? ORDER BY avg_points DESC"
         ).bind(leagueDiv).all();
 
         let tableHtml = "";
 
-        // Se esistono già simulazioni calcolate, creiamo la tabella della Classifica Proiettata
+        // Se esistono già simulazioni calcolate nel database, generiamo la tabella visiva
         if (simRes.results && simRes.results.length > 0) {
           tableHtml += "<h3>Classifica Proiettata (Proiezione Monte Carlo)</h3>";
           tableHtml += "<table style='width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 12px; color: #cbd5e1;'>";
@@ -84,7 +82,7 @@ export default {
           tableHtml += "</tbody></table>";
         }
 
-        // Estraiamo l'elenco completo delle partite (giocate e future) dal database SOGLIE
+        // Estraiamo tutte le partite registrate per quel campionato nel database SOGLIE
         const matches = await dbSoglie.prepare(
           "SELECT event_date, home_team_name_api, away_team_name_api, goals_home, goals_away, status FROM calendario_partite WHERE league_div = ? ORDER BY event_date ASC"
         ).bind(leagueDiv).all();
@@ -172,7 +170,7 @@ export default {
 
     // -------------------------------------------------------------------------
     // ROTTA 3: /mode (Rilevamento stato schermo On/Off)
-    // Aggiorna il valore di nitro_mode nel DB (1 = Schermo On, 0 = Schermo Off)
+    // Riceve lo stato di visibilità dello smartphone (visible / hidden) e aggiorna il DB D1
     // -------------------------------------------------------------------------
     if (url.pathname === "/mode" && request.method === "POST") {
       try {
@@ -189,7 +187,7 @@ export default {
 
     // -------------------------------------------------------------------------
     // ROTTA 4: /pause (Segnale di interruzione)
-    // Cambia lo stato globale su 'paused' per bloccare i cicli asincroni
+    // Imposta lo stato globale a 'paused' per forzare l'arresto del loop di background
     // -------------------------------------------------------------------------
     if (url.pathname === "/pause" && request.method === "POST") {
       try {
@@ -204,7 +202,7 @@ export default {
 
     // -------------------------------------------------------------------------
     // ROTTA 5: /reset (Svuotamento completo del database)
-    // Cancella le tabelle e ripristina i parametri iniziali di sistema
+    // Trunca le tabelle del calendario e delle classifiche e reimposta lo stato generale a 'idle'
     // -------------------------------------------------------------------------
     if (url.pathname === "/reset" && request.method === "POST") {
       try {
@@ -229,6 +227,7 @@ export default {
 
     // -------------------------------------------------------------------------
     // ROTTA 6: / (DASHBOARD PRINCIPALE - INTERFACCIA WEB DI GOLDBET MONTECARLO)
+    // Genera l'HTML e il CSS in stile GOLDBET ENGINE con la barra dei comandi asincroni
     // -------------------------------------------------------------------------
     if (url.pathname === "/") {
       try {
@@ -300,7 +299,7 @@ export default {
         
         html += "<div class='container'>";
         
-        // Logo Principale
+        // Intestazione principale
         html += "<div class='header-title'><span class='white'>GOLDBET</span> <span class='neon'>MONTECARLO</span></div>";
         html += "<div class='subtitle-stats'><span id='stat-totale' class='neon'>" + totalePartite + "</span> PARTITE SALVATE | STAGIONE <span id='stat-season' class='neon'>" + currentSeason + "</span></div>";
         html += "<div class='subtitle-time'>ULTIMO AGGIORNAMENTO <span id='stat-last-sync'>" + lastSync + "</span></div>";
@@ -695,11 +694,18 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
       // BINARIO 2: Campionati mancanti su Matchesio (Generazione Matematica tramite il tuo archivio)
       // MODIFICA CORRETTA: La tabella interrogata su archivio_partite si chiama 'matches' ed è in minuscolo! [3]
       if (!slugVal || matches.length === 0) {
-        rilevataStagione = "2025/26";
+        // RILEVAMENTO DINAMICO STAGIONE (Bypass del Bug della Retrocessione):
+        // Estrae l'esatta ultima stagione inserita in 'matches' per questo campionato (es. '2025/26' o '2026')
+        const seasonRes = await dbArchivio.prepare(
+          "SELECT MAX(season) as ultima FROM matches WHERE div = ?"
+        ).bind(divCode).first();
         
+        rilevataStagione = seasonRes && seasonRes.ultima ? seasonRes.ultima : "2025/26";
+        
+        // Estraiamo tutte le squadre uniche che partecipano EFFETTIVAMENTE a questa specifica stagione!
         const teamsRes = await dbArchivio.prepare(
-          "SELECT DISTINCT hometeam FROM matches WHERE div = ?"
-        ).bind(divCode).all();
+          "SELECT DISTINCT hometeam FROM matches WHERE div = ? AND season = ?"
+        ).bind(divCode, rilevataStagione).all();
 
         const squadreReali = [];
         if (teamsRes.results) {
@@ -719,9 +725,10 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
                 for (let v = 0; v < volte; v++) {
                   idFittizio++;
                   
+                  // Filtriamo rigorosamente per la stagione in corso per non includere vecchie sfide
                   const giocataRes = await dbArchivio.prepare(
-                    "SELECT fthg, ftag FROM matches WHERE div = ? AND hometeam = ? AND awayteam = ? LIMIT 1"
-                  ).bind(divCode, squadreReali[j], squadreReali[k]).all();
+                    "SELECT fthg, ftag FROM matches WHERE div = ? AND season = ? AND hometeam = ? AND awayteam = ? LIMIT 1"
+                  ).bind(divCode, rilevataStagione, squadreReali[j], squadreReali[k]).all();
 
                   let goalsHome = null;
                   let goalsAway = null;
@@ -752,7 +759,7 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
         }
       }
 
-      // Salva nel database
+      // Salva nel database SOGLIE
       if (matches.length > 0) {
         const queryInsert = "INSERT OR REPLACE INTO calendario_partite (fixture_id, league_id, league_div, round, event_date, home_team_name_api, home_team_id_local, away_team_name_api, away_team_id_local, goals_home, goals_away, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         const statements = [];
@@ -782,9 +789,9 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
           totaleInserite += statements.length;
         }
 
-        // ==========================================
+        // =====================================================================
         // AVVIO MOTORE SIMULATORE MONTE CARLO POISSON
-        // ==========================================
+        // =====================================================================
         const teamsList = [];
         const tSet = new Set();
         for (let j = 0; j < matches.length; j++) {
@@ -795,12 +802,10 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
 
         const numTeams = teamsList.length;
 
+        // Estrazione dei parametri da team_stats (colonne att, def, h_factor)
         const paramMap = {};
         for (let j = 0; j < numTeams; j++) {
           const tName = teamsList[j];
-          
-          // MODIFICA SULLA TABELLA DEI PARAMETRI DELLE SQUADRE
-          // Interroga la tua tabella 'team_stats' in archivio_partite
           const strengthRes = await dbArchivio.prepare(
             "SELECT att, def, h_factor FROM team_stats WHERE team_name = ?"
           ).bind(tName).first();
@@ -808,7 +813,7 @@ async function runBackgroundSync(dbArchivio, dbSoglie, currentBatch, remainingLe
           paramMap[tName] = {
             att: strengthRes ? strengthRes.att : 1.0,
             def: strengthRes ? strengthRes.def : 1.0,
-            home_adv: strengthRes ? strengthRes.h_factor : 0.3
+            home_adv: strengthRes && strengthRes.h_factor !== null ? strengthRes.h_factor : 0.3
           };
         }
 
