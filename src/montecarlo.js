@@ -491,10 +491,10 @@ export default {
         html += "      const card = document.getElementById('card-' + currentLeague);";
         html += "      if (card && card.classList.contains('selected')) {";
         html += "        const contentEl = document.getElementById('content-' + currentLeague);";
-        html += "        if (contentEl) {";
-        html += "          const r = await fetch('/matches?league=' + currentLeague);";
-        html += "          contentEl.innerHTML = await r.text();";
-        html += "        }";
+        if (contentEl) {
+          html += "          const r = await fetch('/matches?league=' + currentLeague);";
+          html += "          contentEl.innerHTML = await r.text();";
+        }
         html += "      }";
         html += "    } else {";
         html += "      if (pctEl) pctEl.innerText = 'ERRORE';";
@@ -533,7 +533,7 @@ export default {
         html += "  updateStatus();";
         html += "}";
 
-        // Interroga continuamente lo stato generale per tenere aggiornato il pannello
+        // Interroga continuamente lo stato generale per tenere aggiornato il pannello (CORRETTO l'errore di rendering server-side)
         html += "async function updateStatus() {";
         html += "  try {";
         html += "    const r = await fetch('/status');";
@@ -542,9 +542,9 @@ export default {
         html += "    const elLastSync = document.getElementById('stat-last-sync');";
         html += "    const elTotale = document.getElementById('stat-totale');";
         html += "    const elSeason = document.getElementById('stat-season');";
-        if (elLastSync) elLastSync.innerText = data.lastSync;
-        if (elTotale) elTotale.innerText = data.totale;
-        if (elSeason) elSeason.innerText = data.season;
+        html += "    if (elLastSync) elLastSync.innerText = data.lastSync;";
+        html += "    if (elTotale) elTotale.innerText = data.totale;";
+        html += "    if (elSeason) elSeason.innerText = data.season;";
         html += "    if (data.error) {";
         html += "      document.getElementById('error-box').style.display = 'block';";
         html += "      document.getElementById('error-box').innerHTML = '<strong>Ultimo Errore:</strong> ' + data.error;";
