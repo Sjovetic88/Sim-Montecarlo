@@ -473,6 +473,7 @@ export default {
         html += "}";
 
         // Elabora il prossimo elemento della coda richiamando il backend per un solo campionato alla volta
+        // (CORRETTO l'errore di rendering server-side avvolgendo l'istruzione in una stringa di testo)
         html += "async function processNextInQueue() {";
         html += "  if (!isSyncRunning) return;";
         html += "  if (queueIndex >= queue.length) {";
@@ -491,10 +492,10 @@ export default {
         html += "      const card = document.getElementById('card-' + currentLeague);";
         html += "      if (card && card.classList.contains('selected')) {";
         html += "        const contentEl = document.getElementById('content-' + currentLeague);";
-        if (contentEl) {
-          html += "          const r = await fetch('/matches?league=' + currentLeague);";
-          html += "          contentEl.innerHTML = await r.text();";
-        }
+        html += "        if (contentEl) {";
+        html += "          const r = await fetch('/matches?league=' + currentLeague);";
+        html += "          contentEl.innerHTML = await r.text();";
+        html += "        }";
         html += "      }";
         html += "    } else {";
         html += "      if (pctEl) pctEl.innerText = 'ERRORE';";
@@ -533,7 +534,7 @@ export default {
         html += "  updateStatus();";
         html += "}";
 
-        // Interroga continuamente lo stato generale per tenere aggiornato il pannello (CORRETTO l'errore di rendering server-side)
+        // Interroga continuamente lo stato generale per tenere aggiornato il pannello
         html += "async function updateStatus() {";
         html += "  try {";
         html += "    const r = await fetch('/status');";
