@@ -2,7 +2,7 @@
 // GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE OTTIMIZZATO E DETTAGLIATO
 // =========================================================================
 // Sincronizzatore e simulatore predittivo sequenziale ad altissime prestazioni.
-// Elimina ogni rischio di timeout delegando la coda di calcolo direttamente al browser.
+// Previene il superamento dei limiti di Cloudflare delegando la coda al browser.
 // =========================================================================
 
 // Dizionario statico contenente le emoji delle bandiere per i campionati
@@ -32,6 +32,30 @@ function factorial(n) {
 // Calcola la probabilità di Poisson per K eventi data una media attesa Lambda (es. gol attesi)
 function poissonProb(k, lambda) {
   return (Math.pow(lambda, k) * Math.exp(-lambda)) / factorial(k);
+}
+
+// Traduttore dinamico per allineare i formati delle stagioni con il DB di archivio
+// Converte formati come "2025/2026" o "2025/26" in "2526", lasciando inalterato "2026"
+function translateSeason(seasonStr) {
+  if (!seasonStr) return "2026";
+  const trimmed = seasonStr.trim();
+  if (trimmed.indexOf("/") !== -1) {
+    const parts = trimmed.split("/");
+    const part1 = parts[0].trim();
+    const part2 = parts[1].trim();
+    const y1 = part1.substring(part1.length - 2);
+    const y2 = part2.substring(part2.length - 2);
+    return y1 + y2;
+  }
+  if (trimmed.indexOf("-") !== -1) {
+    const parts = trimmed.split("-");
+    const part1 = parts[0].trim();
+    const part2 = parts[1].trim();
+    const y1 = part1.substring(part1.length - 2);
+    const y2 = part2.substring(part2.length - 2);
+    return y1 + y2;
+  }
+  return trimmed;
 }
 
 export default {
@@ -518,17 +542,15 @@ export default {
         html += "    const elLastSync = document.getElementById('stat-last-sync');";
         html += "    const elTotale = document.getElementById('stat-totale');";
         html += "    const elSeason = document.getElementById('stat-season');";
-        html += "    if (elLastSync) elLastSync.innerText = data.lastSync;";
-        html += "    if (elTotale) elTotale.innerText = data.totale;";
-        html += "    if (elSeason) elSeason.innerText = data.season;";
-        if (syncStatus === "running") {
-          html += "    if (data.error) {";
-          html += "      document.getElementById('error-box').style.display = 'block';";
-          html += "      document.getElementById('error-box').innerHTML = '<strong>Ultimo Errore:</strong> ' + data.error;";
-          html += "    } else {";
-          html += "      document.getElementById('error-box').style.display = 'none';";
-          html += "    }";
-        }
+        if (elLastSync) elLastSync.innerText = data.lastSync;
+        if (elTotale) elTotale.innerText = data.totale;
+        if (elSeason) elSeason.innerText = data.season;
+        html += "    if (data.error) {";
+        html += "      document.getElementById('error-box').style.display = 'block';";
+        html += "      document.getElementById('error-box').innerHTML = '<strong>Ultimo Errore:</strong> ' + data.error;";
+        html += "    } else {";
+        html += "      document.getElementById('error-box').style.display = 'none';";
+        html += "    }";
         html += "  } catch(e) {}";
         html += "}";
 
@@ -631,17 +653,21 @@ export default {
           }
         }
 
-        // BINARIO B: Generazione combinatoria interna se non esiste lo slug su Matchesio
+        // Applica il traduttore dinamico alla stagione rilevata per allinearla con il DB ARCHIVIO (2026 o 2526)
+        let dbSeason = translateSeason(rilevataStagione);
+
+        // BINARIO B: Generazione combinatoria interna se non esiste lo slug o il download fallisce
         if (!slugVal || matches.length === 0) {
           const seasonRes = await dbArchivio.prepare(
             "SELECT MAX(season) as ultima FROM matches WHERE div = ?"
           ).bind(divCode).first();
           
           rilevataStagione = seasonRes && seasonRes.ultima ? seasonRes.ultima : "2025/26";
+          dbSeason = translateSeason(rilevataStagione);
           
           const teamsRes = await dbArchivio.prepare(
             "SELECT DISTINCT hometeam FROM matches WHERE div = ? AND season = ?"
-          ).bind(divCode, rilevataStagione).all();
+          ).bind(divCode, dbSeason).all();
 
           const squadreReali = [];
           if (teamsRes.results) {
@@ -663,7 +689,7 @@ export default {
                     
                     const giocataRes = await dbArchivio.prepare(
                       "SELECT fthg, ftag FROM matches WHERE div = ? AND season = ? AND hometeam = ? AND awayteam = ? LIMIT 1"
-                    ).bind(divCode, rilevataStagione, squadreReali[j], squadreReali[k]).all();
+                    ).bind(divCode, dbSeason, squadreReali[j], squadreReali[k]).all();
 
                     let goalsHome = null;
                     let goalsAway = null;
@@ -737,7 +763,7 @@ export default {
             teamToIndex[teamsList[j]] = j;
           }
 
-          // Estrae i parametri di forza attacco, difesa e fattore campo da DB ARCHIVIO
+          // Carica i parametri di forza attacco, difesa e fattore campo da DB ARCHIVIO
           const paramList = [];
           for (let j = 0; j < numTeams; j++) {
             const tName = teamsList[j];
