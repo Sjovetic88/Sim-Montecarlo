@@ -58,6 +58,16 @@ function translateSeason(seasonStr) {
   return trimmed;
 }
 
+// Algoritmo di Hashing Polinomiale per generare ID numerici unici a partire da una stringa.
+// Previene le collisioni di primary key fra calendari di campionati diversi.
+function generateNumericHash(str) {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 33) ^ str.charCodeAt(i);
+  }
+  return hash >>> 0;
+}
+
 export default {
   // Gestore principale delle richieste HTTP in ingresso nel Worker Cloudflare
   async fetch(request, env, ctx) {
@@ -350,7 +360,7 @@ export default {
             html += "</div>";
             html += "</div>";
           } else {
-            // Genera la card attiva con onclick sicuro senza l'uso di barre rovesciate o caratteri di escape
+            // Genera la card attiva con un legame d'ascolto onclick sicuro e senza caratteri di escape
             html += "<div class='league-item' id='card-" + code + "' onclick='toggleLeague(" + '"' + code + '"' + ")' data-active='1'>";
             html += "<div class='league-header'>";
             html += "<span class='title'><span>" + flag + "</span> " + fullLabel + "</span>";
@@ -473,7 +483,7 @@ export default {
         html += "}";
 
         // Elabora il prossimo elemento della coda richiamando il backend per un solo campionato alla volta
-        // (CORRETTO l'errore di rendering server-side avvolgendo l'istruzione in una stringa di testo)
+        // (CONSERVATE CORRETTAMENTE tutte le direttive del browser all'interno delle virgolette di stringa)
         html += "async function processNextInQueue() {";
         html += "  if (!isSyncRunning) return;";
         html += "  if (queueIndex >= queue.length) {";
@@ -679,14 +689,17 @@ export default {
 
           if (squadreReali.length >= 2) {
             const maxIncontri = squadreReali.length === 10 ? 4 : 2;
-            let idFittizio = 1000000;
 
             for (let j = 0; j < squadreReali.length; j++) {
               for (let k = 0; k < squadreReali.length; k++) {
                 if (j !== k) {
                   const volte = maxIncontri / 2;
                   for (let v = 0; v < volte; v++) {
-                    idFittizio++;
+                    
+                    // METODO 2: Generazione dell'ID numerico basato su un Hash unico delle squadre e del round.
+                    // Impedisce la sovrascrittura incrociata dei calendari fra campionati diversi.
+                    const matchKey = divCode + "_" + squadreReali[j] + "_" + squadreReali[k] + "_" + v;
+                    const fixtureId = generateNumericHash(matchKey);
                     
                     const giocataRes = await dbArchivio.prepare(
                       "SELECT fthg, ftag FROM matches WHERE div = ? AND season = ? AND hometeam = ? AND awayteam = ? LIMIT 1"
@@ -704,7 +717,7 @@ export default {
                     }
 
                     matches.push({
-                      fixture_id: idFittizio,
+                      fixture_id: fixtureId,
                       div: divCode,
                       round: "Giornata N.D.",
                       date: new Date().toISOString(),
