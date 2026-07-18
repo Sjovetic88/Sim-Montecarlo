@@ -1,16 +1,4 @@
-﻿L'errore è dovuto al fatto che nel file src/montecarlo.js è stata incollata
-anche la mia frase di introduzione ("Ecco l'intero file montecarlo.js
-aggiornato..."). Trattandosi di testo in italiano e non di codice JavaScript, il
-compilatore di Wrangler è andato in blocco segnalando l'errore alla riga 1.
-
-Per risolvere, assicurati di cancellare quella prima riga di testo in italiano
-nel tuo file montecarlo.js in modo che il file inizi direttamente con il
-commento // ==========================================.
-
-Ecco il file completo aggiornato, pronto per essere copiato e incollato
-(assicurati di copiare solo il codice all'interno del riquadro grigio):
-
-// =========================================================================
+﻿// =========================================================================
 // GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE OTTIMIZZATO E DETTAGLIATO
 // =========================================================================
 // Sincronizzatore e simulatore predittivo sequenziale ad altissime prestazioni.
