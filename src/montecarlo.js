@@ -586,9 +586,9 @@ export default {
         html += "    const elLastSync = document.getElementById('stat-last-sync');";
         html += "    const elTotale = document.getElementById('stat-totale');";
         html += "    const elSeason = document.getElementById('stat-season');";
-        html += "    if (elLastSync) elLastSync.innerText = data.lastSync;";
-        html += "    if (elTotale) elTotale.innerText = data.totale;";
-        html += "    if (elSeason) elSeason.innerText = data.season;";
+        if (elLastSync) elLastSync.innerText = data.lastSync;
+        if (elTotale) elTotale.innerText = data.totale;
+        if (elSeason) elSeason.innerText = data.season;
         html += "    if (data.error) {";
         html += "      document.getElementById('error-box').style.display = 'block';";
         html += "      document.getElementById('error-box').innerHTML = '<strong>Ultimo Errore:</strong> ' + data.error;";
@@ -832,20 +832,20 @@ export default {
             teamToIndex[teamsList[j]] = j;
           }
 
-          // Carica i parametri di forza attacco, difesa e fattore campo da DB ARCHIVIO
+          // Carica i parametri di forza attacco, difesa e fattore campo da DB ARCHIVIO (tabella team_ratings)
           const paramList = [];
           for (let j = 0; j < numTeams; j++) {
             const tName = teamsList[j];
             const strengthRes = await dbArchivio.prepare(
-              "SELECT att, def, h_factor FROM team_stats WHERE team_name = ?"
+              "SELECT alpha, beta, h_factor FROM team_ratings WHERE team_name = ?"
             ).bind(tName).first();
 
             let attVal = 1.0;
             let defVal = 1.0;
             let hVal = 0.3;
             if (strengthRes) {
-              if (strengthRes.att !== null) attVal = strengthRes.att;
-              if (strengthRes.def !== null) defVal = strengthRes.def;
+              if (strengthRes.alpha !== null) attVal = strengthRes.alpha;
+              if (strengthRes.beta !== null) defVal = strengthRes.beta;
               if (strengthRes.h_factor !== null) hVal = strengthRes.h_factor;
             }
             paramList.push({ att: attVal, def: defVal, home_adv: hVal });
@@ -953,40 +953,4 @@ export default {
             const relegationPct = (relegation[j] / 2000) * 100;
 
             simStatements.push(
-              dbSoglie.prepare(querySimInsert).bind(
-                divCode,
-                tName,
-                avgPoints,
-                winPct,
-                europePct,
-                relegationPct
-              )
-            );
-          }
-          await dbSoglie.batch(simStatements);
-        }
-
-        // Imposta lo stato del singolo campionato a completed (100.0%)
-        await dbSoglie.batch([
-          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'completed')").bind(divCode),
-          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('current_season', ?)").bind(rilevataStagione),
-          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', ?)").bind(new Date().toLocaleString("it-IT"))
-        ]);
-
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { "Content-Type": "application/json" }
-        });
-
-      } catch (err) {
-        // Registra eventuali messaggi di errore riscontrati nella tabella del database di stato
-        await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', ?)").bind(err.message).run();
-        return new Response(JSON.stringify({ success: false, error: err.message }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-    }
-
-    return new Response("Rotta non esistente", { status: 404 });
-  }
-};
+              dbSoglie.prepare(query
