@@ -1,20 +1,14 @@
-﻿Ecco l'intero file montecarlo.js aggiornato e pronto per la produzione.
+﻿L'errore è dovuto al fatto che nel file src/montecarlo.js è stata incollata
+anche la mia frase di introduzione ("Ecco l'intero file montecarlo.js
+aggiornato..."). Trattandosi di testo in italiano e non di codice JavaScript, il
+compilatore di Wrangler è andato in blocco segnalando l'errore alla riga 1.
 
-Ho implementato entrambi i miglioramenti richiesti:
+Per risolvere, assicurati di cancellare quella prima riga di testo in italiano
+nel tuo file montecarlo.js in modo che il file inizi direttamente con il
+commento // ==========================================.
 
-1.  Progresso "Giocate / Totale": Sia l'interfaccia iniziale che l'endpoint
-    /status ora calcolano e visualizzano il conteggio reale delle partite
-    giocate rispetto a quelle complessive (es. 234 / 360) usando un'unica query
-    cumulativa ottimizzata raggruppata per campionati (GROUP BY), proteggendo le
-    quote di lettura del tuo database D1.
-2.  Date reali dall'archivio: Durante la generazione combinatoria offline
-    (Binario B), il Worker estrae ora la colonna date (tutto minuscolo) dal tuo
-    database storico DB_ARCHIVIO.matches. Se la partita è segnata come giocata,
-    applicherà la data storica esatta convertendola in formato ISO. Se la
-    partita è futura, distribuirà gli incontri a intervalli regolari di una
-    settimana per tenere il calendario ordinato.
-
-Nessun backtick (`) o barra rovesciata (\) è presente nel codice.
+Ecco il file completo aggiornato, pronto per essere copiato e incollato
+(assicurati di copiare solo il codice all'interno del riquadro grigio):
 
 // =========================================================================
 // GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE OTTIMIZZATO E DETTAGLIATO
@@ -196,7 +190,7 @@ export default {
         const countRes = await dbSoglie.prepare("SELECT COUNT(*) as totale FROM calendario_partite").first();
         const totalePartite = countRes ? countRes.totale : 0;
 
-        // MIGLIORAMENTO 1: Query cumulativa per ottenere il conteggio totale e giocato di tutti i campionati
+        // Query cumulativa per ottenere il conteggio totale e giocato di tutti i campionati
         const progressRes = await dbSoglie.prepare(
           "SELECT league_div, COUNT(*) as totale, SUM(CASE WHEN status = 'Played' THEN 1 ELSE 0 END) as giocate FROM calendario_partite GROUP BY league_div"
         ).all();
@@ -312,7 +306,7 @@ export default {
         const countRes = await dbSoglie.prepare("SELECT COUNT(*) as totale FROM calendario_partite").first();
         const totalePartite = countRes ? countRes.totale : 0;
 
-        // MIGLIORAMENTO 1: Caricamento cumulativo iniziale del progresso per non fare query ripetitive
+        // Caricamento cumulativo iniziale del progresso per non fare query ripetitive
         const progRes = await dbSoglie.prepare(
           "SELECT league_div, COUNT(*) as totale, SUM(CASE WHEN status = 'Played' THEN 1 ELSE 0 END) as giocate FROM calendario_partite GROUP BY league_div"
         ).all();
@@ -395,7 +389,7 @@ export default {
           const flag = l.emoji || "";
           const fullLabel = code + " " + l.name;
 
-          // MIGLIORAMENTO 1: Inserisce il progresso "Giocate/Totale" invece della sola data nell'interfaccia iniziale
+          // Inserisce il progresso "Giocate/Totale" invece della sola data nell'interfaccia iniziale
           const pInfo = initialProgress[code] || { totale: 0, giocate: 0 };
           const tot = pInfo.totale;
           const gio = pInfo.giocate;
@@ -534,6 +528,7 @@ export default {
         html += "}";
 
         // Elabora il prossimo elemento della coda richiamando il backend per un solo campionato alla volta
+        // (CONSERVATE CORRETTAMENTE tutte le direttive del browser all'interno delle virgolette di stringa)
         html += "async function processNextInQueue() {";
         html += "  if (!isSyncRunning) return;";
         html += "  if (queueIndex >= queue.length) {";
@@ -613,7 +608,7 @@ export default {
         html += "      document.getElementById('error-box').style.display = 'none';";
         html += "    }";
         
-        // MIGLIORAMENTO 1: Aggiornamento dinamico client-side del contatore "Giocate / Totale"
+        // Aggiornamento dinamico client-side del contatore "Giocate / Totale"
         html += "    for (const [code, val] of Object.entries(data.leagues)) {";
         html += "      const subEl = document.getElementById('sub-' + code);";
         html += "      if (subEl && val === 'completed' && data.progress && data.progress[code]) {";
@@ -756,11 +751,11 @@ export default {
                   const volte = maxIncontri / 2;
                   for (let v = 0; v < volte; v++) {
                     
-                    // METODO 2: Generazione dell'ID numerico basato su un Hash unico delle squadre e del round.
+                    // Generazione dell'ID numerico basato su un Hash unico delle squadre e del round.
                     const matchKey = divCode + "_" + squadreReali[j] + "_" + squadreReali[k] + "_" + v;
                     const fixtureId = generateNumericHash(matchKey);
                     
-                    // MIGLIORAMENTO 2: Estrazione della colonna "date" (tutto minuscolo) dal DB storico
+                    // Estrazione della colonna "date" (tutto minuscolo) dal DB storico
                     const giocataRes = await dbArchivio.prepare(
                       "SELECT fthg, ftag, date FROM matches WHERE div = ? AND season = ? AND hometeam = ? AND awayteam = ? LIMIT 1"
                     ).bind(divCode, dbSeason, squadreReali[j], squadreReali[k]).all();
@@ -775,7 +770,7 @@ export default {
                       goalsHome = g.fthg;
                       goalsAway = g.ftag;
                       status = "Played";
-                      // MIGLIORAMENTO 2: Assegna la data storica reale se trovata, altrimenti usa la data di oggi
+                      // Assegna la data storica reale se trovata, altrimenti usa la data di oggi
                       if (g.date) {
                         matchDate = g.date + "T15:00:00Z";
                       } else {
