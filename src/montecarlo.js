@@ -312,33 +312,33 @@ export default {
         let html = "<!DOCTYPE html><html><head><title>Goldbet Montecarlo</title>";
         html += "<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'>";
         html += "<style>";
-        html += "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #000000; color: #f8fafc; padding: 20px 20px 100px 20px; margin: 0; box-sizing: border-box; }";
-        html += ".container { max-width: 480px; margin: 0 auto; }";
-        html += ".header-title { text-align: center; font-size: 24px; font-weight: 800; letter-spacing: 1px; margin-top: 10px; margin-bottom: 4px; }";
-        html += ".header-title span.white { color: #ffffff; }";
-        html += ".header-title span.neon { color: #00ebff; }";
-        html += ".subtitle-stats { text-align: center; color: #94a3b8; font-size: 13px; font-weight: bold; letter-spacing: 0.5px; margin-bottom: 4px; }";
-        html += ".subtitle-stats span.neon { color: #00ebff; }";
-        html += ".subtitle-time { text-align: center; color: #00ebff; font-size: 11px; font-weight: 800; letter-spacing: 1.5px; margin-bottom: 25px; text-transform: uppercase; }";
-        html += ".league-item { background: #0f172a; border: 1px solid #1e293b; margin-bottom: 14px; padding: 16px; border-radius: 8px; cursor: pointer; transition: background 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s; position: relative; }";
-        html += ".league-item:hover { background: #1e293b; }";
-        html += ".league-item.selected { border-color: #00ebff !important; box-shadow: 0 0 10px rgba(0, 235, 255, 0.4); }";
-        html += ".league-item.inactive { opacity: 0.35; cursor: not-allowed; border-color: #0f172a; }";
-        html += ".league-item.inactive:hover { background: #0f172a; }";
-        html += ".league-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 14px; letter-spacing: 0.5px; }";
-        html += ".league-header span.title { display: flex; align-items: center; gap: 8px; color: #ffffff; }";
-        html += ".league-header span.pct { color: #00ebff; font-weight: 800; }";
-        html += ".league-header span.lock { color: #ef4444; font-weight: bold; }";
-        html += ".league-sub { font-size: 11px; color: #64748b; margin-top: 6px; display: flex; align-items: center; gap: 6px; }";
-        html += ".accordion-content { display: none; margin-top: 15px; border-top: 1px solid #1e293b; padding-top: 12px; overflow-x: auto; }";
-        html += ".status-running-msg { text-align: center; color: #f59e0b; font-size: 13px; font-weight: bold; margin-bottom: 15px; }";
-        html += ".error-box { background: #ef444422; border-left: 4px solid #ef4444; padding: 12px; margin-bottom: 20px; border-radius: 4px; color: #fca5a5; font-size: 13px; }";
-        html += ".bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #090d16; border-top: 1px solid #1e293b; display: flex; justify-content: space-around; align-items: center; padding: 10px 0; z-index: 1000; box-shadow: 0 -4px 10px rgba(0,0,0,0.5); }";
-        html += ".nav-btn { background: none; border: none; display: flex; flex-direction: column; align-items: center; color: #64748b; cursor: pointer; text-decoration: none; padding: 4px 10px; width: 20%; transition: color 0.2s, filter 0.2s; }";
-        html += ".nav-btn-active { color: #00ebff !important; }";
-        html += ".nav-icon { font-size: 20px; margin-bottom: 3px; }";
-        html += ".nav-label { font-size: 8px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }";
-        html += ".nitro-active { color: #f97316 !important; filter: drop-shadow(0 0 8px rgba(249,115,22,0.6)); }";
+        html += "body { font-family:'Segoe UI',sans-serif; background:#000; color:#f8fafc; padding:20px 20px 100px 20px; margin:0; box-sizing:border-box; }";
+        html += ".container { max-width:480px; margin:0 auto; }";
+        html += ".header-title { text-align:center; font-size:24px; font-weight:800; letter-spacing:1px; margin-top:10px; margin-bottom:4px; }";
+        html += ".header-title span.white { color:#fff; }";
+        html += ".header-title span.neon { color:#00ebff; }";
+        html += ".subtitle-stats { text-align:center; color:#94a3b8; font-size:13px; font-weight:bold; letter-spacing:0.5px; margin-bottom:4px; }";
+        html += ".subtitle-stats span.neon { color:#00ebff; }";
+        html += ".subtitle-time { text-align:center; color:#00ebff; font-size:11px; font-weight:800; letter-spacing:1.5px; margin-bottom:25px; text-transform:uppercase; }";
+        html += ".league-item { background:#0f172a; border:1px solid #1e293b; margin-bottom:14px; padding:16px; border-radius:8px; cursor:pointer; transition:background 0.2s,border-color 0.2s,box-shadow 0.2s; position:relative; }";
+        html += ".league-item:hover { background:#1e293b; }";
+        html += ".league-item.selected { border-color:#00ebff !important; box-shadow:0 0 10px rgba(0,235,255,0.4); }";
+        html += ".league-item.inactive { opacity:0.35; cursor:not-allowed; border-color:#0f172a; }";
+        html += ".league-item.inactive:hover { background:#0f172a; }";
+        html += ".league-header { display:flex; justify-content:space-between; align-items:center; font-weight:bold; font-size:14px; letter-spacing:0.5px; }";
+        html += ".league-header span.title { display:flex; align-items:center; gap:8px; color:#fff; }";
+        html += ".league-header span.pct { color:#00ebff; font-weight:800; }";
+        html += ".league-header span.lock { color:#ef4444; font-weight:bold; }";
+        html += ".league-sub { font-size:11px; color:#64748b; margin-top:6px; display:flex; align-items:center; gap:6px; }";
+        html += ".accordion-content { display:none; margin-top:15px; border-top:1px solid #1e293b; padding-top:12px; overflow-x:auto; }";
+        html += ".status-running-msg { text-align:center; color:#f59e0b; font-size:13px; font-weight:bold; margin-bottom:15px; }";
+        html += ".error-box { background:#ef444422; border-left:4px solid #ef4444; padding:12px; margin-bottom:20px; border-radius:4px; color:#fca5a5; font-size:13px; }";
+        html += ".bottom-nav { position:fixed; bottom:0; left:0; right:0; background:#090d16; border-top:1px solid #1e293b; display:flex; justify-content:space-around; align-items:center; padding:10px 0; z-index:1000; box-shadow:0 -4px 10px rgba(0,0,0,0.5); }";
+        html += ".nav-btn { background:none; border:none; display:flex; flex-direction:column; align-items:center; color:#64748b; cursor:pointer; padding:4px 10px; width:20%; transition:color 0.2s; }";
+        html += ".nav-btn-active { color:#00ebff !important; }";
+        html += ".nav-icon { font-size:20px; margin-bottom:3px; }";
+        html += ".nav-label { font-size:8px; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; }";
+        html += ".nitro-active { color:#f97316 !important; filter:drop-shadow(0 0 8px rgba(249,115,22,0.6)); }";
         html += "</style></head><body>";
         html += "<div class='container'>";
         html += "<div class='header-title'><span class='white'>GOLDBET</span> <span class='neon'>MONTECARLO</span></div>";
@@ -953,4 +953,40 @@ export default {
             const relegationPct = (relegation[j] / 2000) * 100;
 
             simStatements.push(
-              dbSoglie.prepare(query
+              dbSoglie.prepare(querySimInsert).bind(
+                divCode,
+                tName,
+                avgPoints,
+                winPct,
+                europePct,
+                relegationPct
+              )
+            );
+          }
+          await dbSoglie.batch(simStatements);
+        }
+
+        // Imposta lo stato del singolo campionato a completed (100.0%)
+        await dbSoglie.batch([
+          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'completed')").bind(divCode),
+          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('current_season', ?)").bind(rilevataStagione),
+          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', ?)").bind(new Date().toLocaleString("it-IT"))
+        ]);
+
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { "Content-Type": "application/json" }
+        });
+
+      } catch (err) {
+        // Registra eventuali messaggi di errore riscontrati nella tabella del database di stato
+        await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', ?)").bind(err.message).run();
+        return new Response(JSON.stringify({ success: false, error: err.message }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
+
+    return new Response("Rotta non esistente", { status: 404 });
+  }
+};
