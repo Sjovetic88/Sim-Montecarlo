@@ -3,7 +3,7 @@ main = "src/montecarlo.js"
 compatibility_date = "2024-01-01"
 
 [vars]
-# Puoi inserire qui variabili d'ambiente non segrete se necessario
+# Puoi inserire qui variabili d'ambiente non segrete se necessario,ok?
 
 [[d1_databases]]
 binding = "DB_ARCHIVIO"
