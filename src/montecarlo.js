@@ -1,4 +1,4 @@
-﻿// =========================================================================
+// =========================================================================
 // GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE OTTIMIZZATO E DETTAGLIATO
 // =========================================================================
 // Sincronizzatore e simulatore predittivo sequenziale ad altissime prestazioni.
@@ -586,9 +586,9 @@ export default {
         html += "    const elLastSync = document.getElementById('stat-last-sync');";
         html += "    const elTotale = document.getElementById('stat-totale');";
         html += "    const elSeason = document.getElementById('stat-season');";
-        if (elLastSync) elLastSync.innerText = data.lastSync;
-        if (elTotale) elTotale.innerText = data.totale;
-        if (elSeason) elSeason.innerText = data.season;
+        html += "    if (elLastSync) elLastSync.innerText = data.lastSync;";
+        html += "    if (elTotale) elTotale.innerText = data.totale;";
+        html += "    if (elSeason) elSeason.innerText = data.season;";
         html += "    if (data.error) {";
         html += "      document.getElementById('error-box').style.display = 'block';";
         html += "      document.getElementById('error-box').innerHTML = '<strong>Ultimo Errore:</strong> ' + data.error;";
