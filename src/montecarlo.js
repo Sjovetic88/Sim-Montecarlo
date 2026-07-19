@@ -586,9 +586,9 @@ export default {
         html += "    const elLastSync = document.getElementById('stat-last-sync');";
         html += "    const elTotale = document.getElementById('stat-totale');";
         html += "    const elSeason = document.getElementById('stat-season');";
-        html += "    if (elLastSync) elLastSync.innerText = data.lastSync;";
-        html += "    if (elTotale) elTotale.innerText = data.totale;";
-        html += "    if (elSeason) elSeason.innerText = data.season;";
+        if (elLastSync) elLastSync.innerText = data.lastSync;
+        if (elTotale) elTotale.innerText = data.totale;
+        if (elSeason) elSeason.innerText = data.season;
         html += "    if (data.error) {";
         html += "      document.getElementById('error-box').style.display = 'block';";
         html += "      document.getElementById('error-box').innerHTML = '<strong>Ultimo Errore:</strong> ' + data.error;";
@@ -743,9 +743,9 @@ export default {
                     const matchKey = divCode + "_" + squadreReali[j] + "_" + squadreReali[k] + "_" + v;
                     const fixtureId = generateNumericHash(matchKey);
                     
-                    // Estrazione della colonna "date" (tutto minuscolo) dal DB storico
+                    // BUG FIX: Rimosso LIMIT 1 e aggiunto ORDER BY date ASC per estrarre tutti gli scontri multipli
                     const giocataRes = await dbArchivio.prepare(
-                      "SELECT fthg, ftag, date FROM matches WHERE div = ? AND season = ? AND hometeam = ? AND awayteam = ? LIMIT 1"
+                      "SELECT fthg, ftag, date FROM matches WHERE div = ? AND season = ? AND hometeam = ? AND awayteam = ? ORDER BY date ASC"
                     ).bind(divCode, dbSeason, squadreReali[j], squadreReali[k]).all();
 
                     let goalsHome = null;
