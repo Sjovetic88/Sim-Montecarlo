@@ -311,7 +311,7 @@ export default {
         html += ".header-title span.neon { color:#00ebff; }";
         html += ".subtitle-stats { text-align:center; color:#94a3b8; font-size:12px; font-weight:bold; margin-bottom:4px; }";
         html += ".subtitle-stats span.neon { color:#00ebff; }";
-        html += ".subtitle-time { text-align:center; color:#00ebff; font-size:10px; font-weight:800; letter-spacing:1px; margin-bottom:20px; text-transform:uppercase; }";
+        html += ".subtitle-time { text-align:center; color:#00ebff; font-size:10px; font-weight:800; letter-spacing:1px; margin-bottom:25px; text-transform:uppercase; }";
         html += ".league-item { background:#0f172a; border:1px solid #1e293b; margin-bottom:12px; padding:14px; border-radius:8px; cursor:pointer; position:relative; transition:box-shadow 0.2s; }";
         html += ".league-item:hover { background:#1e293b; }";
         html += ".league-item.selected { border-color:#00ebff !important; box-shadow:0 0 10px rgba(0,235,255,0.4); }";
@@ -328,21 +328,22 @@ export default {
         html += ".tab-content { display:none; margin-top:10px; }";
         html += ".tab-content.active { display:block; }";
         html += ".bottom-nav { position:fixed; bottom:0; left:0; right:0; background:#090d16; border-top:1px solid #1e293b; display:flex; justify-content:space-around; padding:10px 0; z-index:1000; }";
-        html += ".nav-btn { background:none; border:none; display:flex; flex-direction:column; align-items:center; color:#64748b; cursor:pointer; width:20%; }";
+        html += ".nav-btn { background:none; border:none; display:flex; flex-direction:column; align-items:center; color:#64748b; cursor:pointer; width:16.6%; }";
         html += ".nav-btn-active { color:#00ebff !important; }";
         html += ".nav-icon { font-size:20px; margin-bottom:3px; }";
-        html += ".nav-label { font-size:8px; font-weight:bold; text-transform:uppercase; }";
+        html += ".nav-label { font-size:7.5px; font-weight:bold; text-transform:uppercase; }";
         html += ".nitro-active { color:#f97316 !important; filter:drop-shadow(0 0 8px rgba(249,115,22,0.6)); }";
         html += ".modal { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.85); z-index:2000; padding:20px; overflow-y:auto; }";
         html += ".modal-content { background:#0f172a; border:1px solid #1e293b; border-radius:8px; padding:20px; max-width:440px; margin:0 auto; }";
         html += ".modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #1e293b; padding-bottom:10px; }";
         html += ".modal-title { font-size:18px; font-weight:bold; color:#fff; }";
         html += ".close-btn { background:none; border:none; color:#ef4444; font-size:20px; cursor:pointer; }";
-        html += ".input-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }";
-        html += ".input-label { font-size:12px; color:#cbd5e1; width:40%; }";
-        html += ".input-field { background:#090d16; border:1px solid #1e293b; color:#fff; padding:6px; border-radius:4px; width:55%; font-size:12px; }";
+        html += ".input-row { display:flex; flex-direction:column; margin-bottom:12px; border-bottom:1px solid #1e293b; padding-bottom:10px; }";
+        html += ".input-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }";
+        html += ".input-label { font-size:12px; color:#cbd5e1; font-weight:bold; }";
+        html += ".link-url-indicator { font-size:10px; color:#00ebff; text-decoration:none; margin-top:4px; display:inline-block; }";
+        html += ".input-field { background:#090d16; border:1px solid #1e293b; color:#fff; padding:6px; border-radius:4px; width:100%; font-size:12px; box-sizing:border-box; }";
         html += ".save-btn { background:#00ebff; color:#000; border:none; padding:8px 12px; border-radius:4px; cursor:pointer; font-weight:bold; width:100%; margin-top:15px; }";
-        html += ".reset-panel-btn { background:#ef4444; color:#fff; border:none; padding:8px 12px; border-radius:4px; cursor:pointer; font-weight:bold; width:100%; margin-top:10px; }";
         html += "table { width:100%; border-collapse:collapse; font-size:11px; color:#cbd5e1; margin-top:5px; }";
         html += "th,td { padding:6px; text-align:left; border-bottom:1px solid #1e293b; }";
         html += "th { color:#94a3b8; font-weight:bold; }";
@@ -384,6 +385,7 @@ export default {
           const flag = l.emoji || "";
           const fullLabel = code + " " + l.name;
 
+          // Inserisce il progresso "Giocate/Totale" invece della sola data nell'interfaccia iniziale
           const pInfo = initialProgress[code] || { totale: 0, giocate: 0 };
           const tot = pInfo.totale;
           const gio = pInfo.giocate;
@@ -417,7 +419,7 @@ export default {
         html += "</div>";
         html += "</div>";
 
-        // MODAL SETTINGS (MODIFICA LINK SLUG)
+        // MODAL SETTINGS (MODIFICA LINK SLUG CON COMPLETO INDIRIZZO CLICCABILE)
         html += "<div id='slugs-modal' class='modal'>";
         html += "<div class='modal-content'>";
         html += "<div class='modal-header'><span class='modal-title'>⚙️ Configurazione Link</span><button class='close-btn' onclick='closeSlugsModal()'>✕</button></div>";
@@ -428,17 +430,23 @@ export default {
             const code = l.id;
             const currentSlugVal = slugsMap[code] || "";
             html += "<div class='input-row'>";
+            html += "<div class='input-header'>";
             html += "<span class='input-label'>" + l.emoji + " " + code + "</span>";
-            html += "<input id='slug-input-" + code + "' class='input-field' type='text' value='" + currentSlugVal + "'>";
+            html += "</div>";
+            html += "<input id='slug-input-" + code + "' class='input-field' type='text' value='" + currentSlugVal + "' oninput='updateLinkIndicator(" + '"' + code + '"' + ")'>";
+            
+            // Visualizzazione dell'indirizzo completo cliccabile per diagnostica istantanea
+            const fullLinkUrl = "https://www.matchesio.com/competition/" + currentSlugVal + "/export/json";
+            html += "<a id='link-url-" + code + "' class='link-url-indicator' href='" + fullLinkUrl + "' target='_blank'>🔗 Test Link Export</a>";
             html += "</div>";
           }
         }
         html += "</div>";
         html += "<button class='save-btn' onclick='saveSlugs()'>SALVA MODIFICHE</button>";
-        html += "<button class='reset-panel-btn' onclick='triggerReset()'>RESET COMPLETO DATABASE</button>";
         html += "</div>";
         html += "</div>";
 
+        // BARRA DI NAVIGAZIONE A 6 PULSANTI (ALL, START, PAUSA, NITRO, LINK, RESET)
         html += "<div class='bottom-nav'>";
         html += "<button onclick='toggleAll()' class='nav-btn nav-btn-active'><span class='nav-icon'>☑️</span><span class='nav-label'>ALL</span></button>";
         html += "<button id='btn-start' onclick='startSequentialSync()' class='nav-btn' style='color: #10b981;'><span class='nav-icon'>▶️</span><span class='nav-label'>START</span></button>";
@@ -447,6 +455,7 @@ export default {
         const isNitroActive = nitroMode === "1" ? "nitro-active" : "";
         html += "<button id='btn-nitro' onclick='toggleNitro()' class='nav-btn " + isNitroActive + "'><span class='nav-icon'>🔥</span><span class='nav-label'>NITRO</span></button>";
         html += "<button onclick='openSlugsModal()' class='nav-btn' style='color: #a855f7;'><span class='nav-icon'>⚙️</span><span class='nav-label'>LINK</span></button>";
+        html += "<button id='btn-reset' onclick='triggerReset()' class='nav-btn' style='color: #ef4444;'><span class='nav-icon'>⛔</span><span class='nav-label'>RESET</span></button>";
         html += "</div>";
 
         // CODICE JAVASCRIPT CLIENT CON LOGICA DI CODA E GESTIONE DEL SONNO (WAKE LOCK)
@@ -489,6 +498,15 @@ export default {
         html += "function openSlugsModal() { document.getElementById('slugs-modal').style.display = 'block'; }";
         html += "function closeSlugsModal() { document.getElementById('slugs-modal').style.display = 'none'; }";
 
+        // Aggiorna dinamicamente l'indicatore URL visibile per il test istantaneo
+        html += "function updateLinkIndicator(code) {";
+        html += "  const val = document.getElementById('slug-input-' + code).value.trim();";
+        html += "  const a = document.getElementById('link-url-' + code);";
+        html += "  if (a) {";
+        html += "    a.href = 'https://www.matchesio.com/competition/' + val + '/export/json';";
+        html += "  }";
+        html += "}";
+
         // Salvataggio asincrono dei link modificati tramite AJAX
         html += "async function saveSlugs() {";
         html += "  const inputs = document.querySelectorAll('.input-field');";
@@ -505,16 +523,18 @@ export default {
         html += "  alert('Link di configurazione salvati!');";
         html += "}";
 
-        // Espande e mostra i dettagli del campionato richiamando la rotta HTML
+        // Espande e mostra i dettagli del campionato con la mini-barra di navigazione (Quoted correttamente tramite String.fromCharCode)
         html += "async function toggleLeague(code) {";
         html += "  const card = document.getElementById('card-' + code);";
         html += "  const el = document.getElementById('content-' + code);";
         html += "  const isSelected = card.classList.toggle('selected');";
+        html += "  const q = String.fromCharCode(34);";
+        html += "  const s = String.fromCharCode(39);";
         html += "  if (isSelected) {";
         html += "    el.style.display = 'block';";
         html += "    el.innerHTML = '<div class=tabs-nav>' +";
-        html += "      '<button id=btn-tab-classifica-' + code + ' class=\"tab-btn active\" onclick=switchTab(' + String.fromCharCode(39) + code + String.fromCharCode(39) + ',' + String.fromCharCode(39) + 'classifica' + String.fromCharCode(39) + ')>🏆 Classifica</button>' +";
-        html += "      '<button id=btn-tab-calendario-' + code + ' class=tab-btn onclick=switchTab(' + String.fromCharCode(39) + code + String.fromCharCode(39) + ',' + String.fromCharCode(39) + 'calendario' + String.fromCharCode(39) + ')>📅 Calendario</button>' +";
+        html += "      '<button id=btn-tab-classifica-' + code + ' class=\"tab-btn active\" onclick=\"switchTab(' + s + code + s + ',' + s + 'classifica' + s + ')\">🏆 Classifica</button>' +";
+        html += "      '<button id=btn-tab-calendario-' + code + ' class=tab-btn onclick=\"switchTab(' + s + code + s + ',' + s + 'calendario' + s + ')\">📅 Calendario</button>' +";
         html += "      '</div>' +";
         html += "      '<div id=tab-classifica-' + code + ' class=\"tab-content active\">Caricamento proiezioni...</div>' +";
         html += "      '<div id=tab-calendario-' + code + ' class=tab-content>Caricamento calendario...</div>';";
@@ -551,10 +571,10 @@ export default {
         html += "function renderStandings(code, standings) {";
         html += "  const container = document.getElementById('tab-classifica-' + code);";
         html += "  if (!standings || standings.length === 0) {";
-        html += "    container.innerText = 'Nessuna proiezione calcolata.';";
+        html += "    container.innerText = 'Nessuna classifica calcolata.';";
         html += "    return;";
         html += "  }";
-        html += "  let table = '<table><thead><tr><th>Squadra</th><th>Punti</th><th style=\"color:#00ebff\">Vincitore %</th><th style=\"color:#10b981\">Europa %</th><th style=\"color:#ef4444\">Retr %</th></tr></thead><tbody>';";
+        html += "  let table = '<table><thead><tr><th>Squadra</th><th>Punti</th><th style=\"color:#00ebff\">Vittoria %</th><th style=\"color:#10b981\">Europa %</th><th style=\"color:#ef4444\">Retr %</th></tr></thead><tbody>';";
         html += "  for (let i = 0; i < standings.length; i++) {";
         html += "    const s = standings[i];";
         html += "    table += '<tr><td><b>' + s.team_name + '</b></td><td>' + s.avg_points.toFixed(1) + '</td><td style=\"color:#00ebff;font-weight:bold\">' + s.win_pct.toFixed(1) + '%</td><td style=\"color:#10b981\">' + s.europe_pct.toFixed(1) + '%</td><td style=\"color:#ef4444\">' + s.relegation_pct.toFixed(1) + '%</td></tr>';";
@@ -567,10 +587,10 @@ export default {
         html += "function renderCalendar(code, calendar) {";
         html += "  const container = document.getElementById('tab-calendario-' + code);";
         html += "  if (!calendar || calendar.length === 0) {";
-        html += "    container.innerText = 'Calendario vuoto.';";
+        html += "    container.innerText = 'Nessuna partita trovata.';";
         html += "    return;";
         html += "  }";
-        html += "  let table = '<table><thead><tr><th>Data</th><th>Match</th><th style=\"text-align:center\">GOL</th></tr></thead><tbody>';";
+        html += "  let table = '<table><thead><tr><th>Data</th><th>Incontro</th><th style=\"text-align:center\">Risultato</th></tr></thead><tbody>';";
         html += "  for (let i = 0; i < calendar.length; i++) {";
         html += "    const m = calendar[i];";
         html += "    const d = new Date(m.event_date).toLocaleDateString('it-IT', {day:'2-digit',month:'2-digit'});";
@@ -633,7 +653,7 @@ export default {
         html += "  if (pctEl) pctEl.innerText = 'SYNCING';";
         html += "  const isNitro = document.getElementById('btn-nitro').classList.contains('nitro-active') ? '1' : '0';";
         
-        // MIGLIORAMENTO 2: Applica l'effetto fuoco neon se la Nitro è attiva
+        // Applica l'effetto fuoco neon se la Nitro è attiva
         html += "  if (isNitro === '1' && card) {";
         html += "    card.classList.add('nitro-glowing');";
         html += "  }";
@@ -665,7 +685,7 @@ export default {
         html += "  queueIndex++;";
         html += "  const delayTime = isNitro === '1' ? 1200 : 10000;";
         
-        // MIGLIORAMENTO 2: Mostra un conto alla rovescia reale se siamo a velocità normale
+        // Mostra un conto alla rovescia reale se siamo a velocità normale
         html += "  if (isNitro !== '1' && queueIndex < queue.length) {";
         html += "    let timer = 10;";
         html += "    const interval = setInterval(() => {";
