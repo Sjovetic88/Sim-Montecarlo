@@ -999,7 +999,7 @@ export default {
           for (let j = 0; j < numTeams; j++) {
             const tName = teamsList[j];
             const strengthRes = await dbArchivio.prepare(
-              "SELECT r.alpha, r.beta, e.h_factor FROM team_ratings r LEFT JOIN team_aliases a ON r.team_name = a.alias LEFT JOIN classifica_elite e ON a.team_id = e.[team-id] WHERE r.team_name = ?"
+              "SELECT r.alpha, r.beta, e.h_factor FROM team_ratings r LEFT JOIN team_aliases a ON r.team_name = a.alias LEFT JOIN classifica_elite e ON a.team_id = e.team_id WHERE r.team_name = ?"
             ).bind(tName).first();
 
             let attVal = 1.0;
