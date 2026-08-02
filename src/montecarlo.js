@@ -22,17 +22,17 @@ const LEAGUE_NAMES = {
   "I2": "ITALY SERIE B", "SP1": "SPAIN LA LIGA", "F1": "FRANCE LIGUE 1", "N1": "NETHERLANDS EREDIVISIE"
 };
 
-// Dizionario statico contenente gli slug pre-configurati ufficiali di Matchesio
+// Dizionario statico contenente gli slug pre-configurati ufficiali di Matchesio con anno
 const DEFAULT_SLUGS = {
-  "ARG": "argentina-liga-profesional", "B1": "belgium-jupiler-league", "BRA": "brazil-serie-a",
-  "CHN": "china-super-league", "D1": "germany-bundesliga", "D2": "germany-2-bundesliga",
-  "DNK": "denmark-superligaen", "IRL": "ireland-premier-division", "MEX": "mexico-liga-mx",
-  "NOR": "norway-eliteserien", "P1": "portugal-primeira-liga", "RUS": "russia-premier-league",
-  "SWE": "sweden-allsvenskan", "T1": "turkey-super-lig", "USA": "usa-mls",
-  "E0": "england-premier-league", "E1": "england-championship", "I1": "italy-serie-a",
-  "I2": "italy-serie-b", "SP1": "spain-la-liga", "F1": "france-ligue-1",
-  "N1": "netherlands-eredivisie", "G1": "greece-super-league", "AUT": "austria-bundesliga",
-  "SWZ": "switzerland-super-league"
+  "ARG": "argentina-liga-profesional-2025", "B1": "belgium-jupiler-league-2025-2026", "BRA": "brazil-serie-a-2025",
+  "CHN": "china-super-league-2025", "D1": "germany-bundesliga-2025-2026", "D2": "germany-2-bundesliga-2025-2026",
+  "DNK": "denmark-superligaen-2025-2026", "IRL": "ireland-premier-division-2026", "MEX": "mexico-liga-mx-2025",
+  "NOR": "norway-eliteserien-2025", "P1": "portugal-primeira-liga-2025-2026", "RUS": "russia-premier-league-2025-2026",
+  "SWE": "sweden-allsvenskan-2025", "T1": "turkey-super-lig-2025-2026", "USA": "usa-mls-2025",
+  "E0": "england-premier-league-2025-2026", "E1": "england-championship-2025-2026", "I1": "italy-serie-a-2025-2026",
+  "I2": "italy-serie-b-2025-2026", "SP1": "spain-la-liga-2025-2026", "F1": "france-ligue-1-2025-2026",
+  "N1": "netherlands-eredivisie-2025-2026", "G1": "greece-super-league-2025-2026", "AUT": "austria-bundesliga-2025-2026",
+  "SWZ": "switzerland-super-league-2025-2026"
 };
 
 // Calcola il fattoriale di un numero intero (necessario per la formula di Poisson)
@@ -546,7 +546,7 @@ export default {
         html += "  if (isSelected) {";
         html += "    el.style.display = 'block';";
         html += "    el.innerHTML = '<div class=tabs-nav>' +";
-        html += "      '<button id=btn-tab-classifica-' + code + ' class=\"tab-btn active\" onclick=\"switchTab(' + s + code + s + ',' + s + 'classifica' + s + ')\">🏆 Classifica</button>' +";
+        html += "      '<button id=btn-tab-classifica-' + code + ' class=' + s + 'tab-btn active' + s + ' onclick=\"switchTab(' + s + code + s + ',' + s + 'classifica' + s + ')\">🏆 Classifica</button>' +";
         html += "      '<button id=btn-tab-calendario-' + code + ' class=tab-btn onclick=\"switchTab(' + s + code + s + ',' + s + 'calendario' + s + ')\">📅 Calendario</button>' +";
         html += "      '</div>' +";
         html += "      '<div id=tab-classifica-' + code + ' class=\"tab-content active\">Caricamento proiezioni...</div>' +";
@@ -999,7 +999,7 @@ export default {
           for (let j = 0; j < numTeams; j++) {
             const tName = teamsList[j];
             const strengthRes = await dbArchivio.prepare(
-              "SELECT r.alpha, r.beta, e.h_factor FROM team_ratings r LEFT JOIN classifica_elite e ON r.team_name = e.team_name WHERE r.team_name = ?"
+              "SELECT r.alpha, r.beta, e.h_factor FROM team_ratings r LEFT JOIN team_aliases a ON r.team_name = a.alias LEFT JOIN classifica_elite e ON a.team_id = e.[team-id] WHERE r.team_name = ?"
             ).bind(tName).first();
 
             let attVal = 1.0;
