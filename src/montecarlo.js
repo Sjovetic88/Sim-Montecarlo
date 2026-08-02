@@ -22,6 +22,19 @@ const LEAGUE_NAMES = {
   "I2": "ITALY SERIE B", "SP1": "SPAIN LA LIGA", "F1": "FRANCE LIGUE 1", "N1": "NETHERLANDS EREDIVISIE"
 };
 
+// Dizionario statico contenente gli slug pre-configurati ufficiali di Matchesio
+const DEFAULT_SLUGS = {
+  "ARG": "argentina-liga-profesional", "B1": "belgium-jupiler-league", "BRA": "brazil-serie-a",
+  "CHN": "china-super-league", "D1": "germany-bundesliga", "D2": "germany-2-bundesliga",
+  "DNK": "denmark-superligaen", "IRL": "ireland-premier-division", "MEX": "mexico-liga-mx",
+  "NOR": "norway-eliteserien", "P1": "portugal-primeira-liga", "RUS": "russia-premier-league",
+  "SWE": "sweden-allsvenskan", "T1": "turkey-super-lig", "USA": "usa-mls",
+  "E0": "england-premier-league", "E1": "england-championship", "I1": "italy-serie-a",
+  "I2": "italy-serie-b", "SP1": "spain-la-liga", "F1": "france-ligue-1",
+  "N1": "netherlands-eredivisie", "G1": "greece-super-league", "AUT": "austria-bundesliga",
+  "SWZ": "switzerland-super-league"
+};
+
 // Calcola il fattoriale di un numero intero (necessario per la formula di Poisson)
 function factorial(n) {
   let res = 1;
@@ -428,7 +441,7 @@ export default {
           const l = listaLeghe[i];
           if (l.is_active !== 0) {
             const code = l.id;
-            const currentSlugVal = slugsMap[code] || "";
+            const currentSlugVal = slugsMap[code] || DEFAULT_SLUGS[code] || "";
             html += "<div class='input-row'>";
             html += "<div class='input-header'>";
             html += "<span class='input-label'>" + l.emoji + " " + code + "</span>";
@@ -639,8 +652,7 @@ export default {
         html += "  processNextInQueue();";
         html += "}";
 
-        // Elabora il prossimo elemento della coda richiamando il backend per un solo campionato alla volta
-        // (CONSERVA TUTTE LE VARIABILI ED ELIMINA OGNI ERRORE DI PARSING O TRONCAMENTO)
+        // Elabora il prossimo elemento della coda richiamando le chiamate sequenziali singole
         html += "async function processNextInQueue() {";
         html += "  if (!isSyncRunning) return;";
         html += "  if (queueIndex >= queue.length) {";
@@ -892,7 +904,7 @@ export default {
                     const matchKey = divCode + "_" + squadreReali[j] + "_" + squadreReali[k] + "_" + v;
                     const fixtureId = generateNumericHash(matchKey);
                     
-                    // BUG FIX: Rimosso LIMIT 1 e aggiunto ORDER BY date ASC per estrarre tutti gli scontri multipli
+                    // BUG FIX: Rimosso LIMIT 1 e aggiunto ORDER BY date ASC per estrarre tutti gli sconti multipli
                     const giocataRes = await dbArchivio.prepare(
                       "SELECT fthg, ftag, date FROM matches WHERE div = ? AND season = ? AND hometeam = ? AND awayteam = ? ORDER BY date ASC"
                     ).bind(divCode, dbSeason, squadreReali[j], squadreReali[k]).all();
@@ -981,12 +993,13 @@ export default {
             teamToIndex[teamsList[j]] = j;
           }
 
-          // Carica i parametri di forza attacco, difesa e fattore campo da DB ARCHIVIO (tabella team_ratings)
+          // CORREZIONE: Interroga la tabella team_ratings collegandola in LEFT JOIN con classifica_elite
+          // per estrarre alpha, beta e h_factor correttamente senza mandare in crash la query
           const paramList = [];
           for (let j = 0; j < numTeams; j++) {
             const tName = teamsList[j];
             const strengthRes = await dbArchivio.prepare(
-              "SELECT alpha, beta, h_factor FROM team_ratings WHERE team_name = ?"
+              "SELECT r.alpha, r.beta, e.h_factor FROM team_ratings r LEFT JOIN classifica_elite e ON r.team_name = e.team_name WHERE r.team_name = ?"
             ).bind(tName).first();
 
             let attVal = 1.0;
