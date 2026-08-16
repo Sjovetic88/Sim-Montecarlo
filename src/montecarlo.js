@@ -1,5 +1,5 @@
 // =========================================================================
-// GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE OTTIMIZZATO E DETTAGLIATO
+// GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE OPTIMIZZATO E DETTAGLIATO
 // =========================================================================
 // Sincronizzatore e simulatore predittivo sequenziale ad altissime prestazioni.
 // Previene il superamento dei limiti di Cloudflare delegando la coda al browser.
@@ -317,7 +317,7 @@ export default {
         html += ".tab-content { display:none; margin-top:10px; }";
         html += ".tab-content.active { display:block; }";
         html += ".bottom-nav { position:fixed; bottom:0; left:0; right:0; background:#090d16; border-top:1px solid #1e293b; display:flex; justify-content:space-around; padding:10px 0; z-index:1000; }";
-        html += ".nav-btn { background:none; border:none; display:flex; flex-direction:column; align-items:center; color:#64748b; cursor:pointer; width:16.6%; }";
+        html += ".nav-btn { background:none; border:none; display:flex; flex-direction:column; align-items:center; color:#64748b; cursor:pointer; width:20%; }";
         html += ".nav-btn-active { color:#00ebff !important; }";
         html += ".nav-icon { font-size:20px; margin-bottom:3px; }";
         html += ".nav-label { font-size:7.5px; font-weight:bold; text-transform:uppercase; }";
@@ -415,7 +415,6 @@ export default {
         html += "let queueIndex = -1;";
         html += "let isSyncRunning = false;";
         html += "let wakeLock = null;";
-        html += "const SLUGS_MAP = " + JSON.stringify(slugsMap) + ";";
 
         // Richiede il blocco del sonno per tenere lo schermo sempre attivo
         html += "async function requestWakeLock() {";
