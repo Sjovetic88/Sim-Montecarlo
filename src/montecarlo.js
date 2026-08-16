@@ -10,7 +10,7 @@ const LEAGUE_FLAGS = {
   "ARG": "🇦🇷", "B1": "🇧🇪", "BRA": "🇧🇷", "CHN": "🇨🇳", "D1": "🇩🇪", "D2": "🇩🇪",
   "DNK": "🇩🇰", "IRL": "🇮🇪", "MEX": "🇲🇽", "NOR": "🇳🇴", "P1": "🇵🇹", "RUS": "🇷🇺",
   "SWE": "🇸🇪", "T1": "🇹🇷", "USA": "🇺🇸", "E0": "🇬🇧", "E1": "🇬🇧", "I1": "🇮🇹",
-  "I2": "🇮🇹", "SP1": "🇪🇸", "F1": "🇫🇷", "N1": "🇳🇱", "G1": "🇬🇷", "AUT": "🇦🇹", "SWZ": "🇨🇭"
+  "I2": "🇮🇹", "SP1": "🇪🇸", "F1": "🇫🇷", "N1": "🇳🇱", "G1": "🇬🇷", "AUT": "🇦🇹", "SWZ": "🇨涼"
 };
 
 // Dizionario statico contenente i nomi estesi dei campionati gestiti
@@ -380,6 +380,7 @@ export default {
             html += "</div>";
           } else {
             // Genera la card attiva con un legame d'ascolto onclick sicuro e senza caratteri di escape
+            // BUG FIX: Isolata la card con event.stopPropagation() sull'accordion-content per evitare il collasso automatico al click dei tab
             html += "<div class='league-item' id='card-" + code + "' onclick='toggleLeague(" + '"' + code + '"' + ")' data-active='1'>";
             html += "<div class='league-header'>";
             html += "<span class='title'><span>" + flag + "</span> " + fullLabel + "</span>";
@@ -388,7 +389,7 @@ export default {
             html += "<div class='league-sub'>";
             html += "<span>📅</span> <span id='sub-" + code + "'>" + (lStatus === "completed" ? "Giocate: " + gio + " / " + tot : "Calendario calcolato autonomamente") + "</span>";
             html += "</div>";
-            html += "<div class='accordion-content' id='content-" + code + "'>";
+            html += "<div class='accordion-content' id='content-" + code + "' onclick='event.stopPropagation()'>";
             html += "Caricamento partite...";
             html += "</div>";
             html += "</div>";
@@ -454,7 +455,7 @@ export default {
         html += "    el.style.display = 'block';";
         html += "    el.innerHTML = '<div class=tabs-nav>' +";
         html += "      '<button id=btn-tab-classifica-' + code + ' class=' + s + 'tab-btn active' + s + ' onclick=' + s + 'switchTab(' + q + code + q + ',' + q + 'classifica' + q + ')' + s + '>🏆 Classifica</button>' +";
-        html += "      '<button id=btn-tab-calendario-' + code + ' class=' + s + 'tab-btn' + s + ' onclick=' + s + 'switchTab(' + q + code + q + ',' + q + 'calendario' + q + ')' + s + '>📅 Calendario</button>' +";
+        html += "      '<button id=btn-tab-calendario-' + code + ' class=tab-btn onclick=' + s + 'switchTab(' + q + code + q + ',' + q + 'calendario' + q + ')' + s + '>📅 Calendario</button>' +";
         html += "      '</div>' +";
         html += "      '<div id=tab-classifica-' + code + ' class=\"tab-content active\">Caricamento proiezioni...</div>' +";
         html += "      '<div id=tab-calendario-' + code + ' class=tab-content>Caricamento calendario...</div>';";
