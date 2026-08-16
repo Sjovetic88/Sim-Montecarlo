@@ -108,7 +108,7 @@ export default {
     }
 
     // -------------------------------------------------------------------------
-    // ROTTA 1.3: GET /cron-trigger
+    // ROTTA 2: GET /cron-trigger
     // Endpoint richiamabile da cron-job.org per l'elaborazione automatica delle 7:00
     // -------------------------------------------------------------------------
     if (url.pathname === "/cron-trigger") {
@@ -129,7 +129,7 @@ export default {
     }
 
     // -------------------------------------------------------------------------
-    // ROTTA 2: GET /status
+    // ROTTA 3: GET /status
     // Ritorna le metriche generali, lo stato e il progresso di gioco di ogni lega
     // -------------------------------------------------------------------------
     if (url.pathname === "/status") {
@@ -194,7 +194,7 @@ export default {
     }
 
     // -------------------------------------------------------------------------
-    // ROTTA 3: POST /mode
+    // ROTTA 4: POST /mode
     // Aggiorna lo stato visivo dello schermo per regolare dinamicamente la velocità
     // -------------------------------------------------------------------------
     if (url.pathname === "/mode" && request.method === "POST") {
@@ -211,7 +211,7 @@ export default {
     }
 
     // -------------------------------------------------------------------------
-    // ROTTA 4: POST /pause
+    // ROTTA 5: POST /pause
     // Invia un segnale di pausa salvando lo stato 'paused' nel database SOGLIE
     // -------------------------------------------------------------------------
     if (url.pathname === "/pause" && request.method === "POST") {
@@ -226,7 +226,7 @@ export default {
     }
 
     // -------------------------------------------------------------------------
-    // ROTTA 5: POST /reset
+    // ROTTA 6: POST /reset
     // Cancella tutti i dati pregressi di calendario e proiezioni per ripartire da zero
     // -------------------------------------------------------------------------
     if (url.pathname === "/reset" && request.method === "POST") {
@@ -251,7 +251,7 @@ export default {
     }
 
     // -------------------------------------------------------------------------
-    // ROTTA 6: GET / (DASHBOARD)
+    // ROTTA 8: GET / (DASHBOARD)
     // Costruisce e serve la pagina web con gestione sequenziale del browser e Wake Lock
     // -------------------------------------------------------------------------
     if (url.pathname === "/") {
@@ -386,7 +386,7 @@ export default {
             html += "<span id='pct-" + code + "' class='pct'>" + pct + "</span>";
             html += "</div>";
             html += "<div class='league-sub'>";
-            html += "<span>📅</span> <span id='sub-" + code + "'>" + (lStatus === "completed" ? "Giocate: " + gio + " / " + tot : "In attesa di sincronizzazione") + "</span>";
+            html += "<span>📅</span> <span id='sub-" + code + "'>" + (lStatus === "completed" ? "Giocate: " + gio + " / " + tot : "Calendario calcolato autonomamente") + "</span>";
             html += "</div>";
             html += "<div class='accordion-content' id='content-" + code + "'>";
             html += "Caricamento partite...";
@@ -453,8 +453,8 @@ export default {
         html += "  if (isSelected) {";
         html += "    el.style.display = 'block';";
         html += "    el.innerHTML = '<div class=tabs-nav>' +";
-        html += "      '<button id=btn-tab-classifica-' + code + ' class=' + s + 'tab-btn active' + s + ' onclick=\"switchTab(' + s + code + s + ',' + s + 'classifica' + s + ')\">🏆 Classifica</button>' +";
-        html += "      '<button id=btn-tab-calendario-' + code + ' class=tab-btn onclick=\"switchTab(' + s + code + s + ',' + s + 'calendario' + s + ')\">📅 Calendario</button>' +";
+        html += "      '<button id=btn-tab-classifica-' + code + ' class=' + s + 'tab-btn active' + s + ' onclick=' + s + 'switchTab(' + q + code + q + ',' + q + 'classifica' + q + ')' + s + '>🏆 Classifica</button>' +";
+        html += "      '<button id=btn-tab-calendario-' + code + ' class=' + s + 'tab-btn' + s + ' onclick=' + s + 'switchTab(' + q + code + q + ',' + q + 'calendario' + q + ')' + s + '>📅 Calendario</button>' +";
         html += "      '</div>' +";
         html += "      '<div id=tab-classifica-' + code + ' class=\"tab-content active\">Caricamento proiezioni...</div>' +";
         html += "      '<div id=tab-calendario-' + code + ' class=tab-content>Caricamento calendario...</div>';";
@@ -698,328 +698,8 @@ export default {
       }
 
       try {
-        let rilevataStagione = "N.D.";
-
-        // Segna lo stato del campionato come 'syncing' sul DB SOGLIE
-        await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'syncing')").bind(divCode).run();
-
-        // Pulizia preventiva dei dati vecchi per evitare duplicazioni o accavallamenti
-        await dbSoglie.batch([
-          dbSoglie.prepare("DELETE FROM calendario_partite WHERE league_div = ?").bind(divCode),
-          dbSoglie.prepare("DELETE FROM simulazioni_classifica WHERE league_div = ?").bind(divCode)
-        ]);
-
-        let matches = [];
-
-        // Generazione combinatoria interna locale al 100% (Matchesio rimosso)
-        const seasonRes = await dbArchivio.prepare(
-          "SELECT MAX(season) as ultima FROM matches WHERE div = ?"
-        ).bind(divCode).first();
-        
-        rilevataStagione = seasonRes && seasonRes.ultima ? seasonRes.ultima : "2025/26";
-        dbSeason = translateSeason(rilevataStagione);
-        
-        const teamsRes = await dbArchivio.prepare(
-          "SELECT DISTINCT hometeam FROM matches WHERE div = ? AND season = ?"
-        ).bind(divCode, dbSeason).all();
-
-        const squadreReali = [];
-        if (teamsRes.results) {
-          for (let j = 0; j < teamsRes.results.length; j++) {
-            squadreReali.push(teamsRes.results[j].hometeam);
-          }
-        }
-
-        if (squadreReali.length >= 2) {
-          const maxIncontri = squadreReali.length === 10 ? 4 : 2;
-
-          for (let j = 0; j < squadreReali.length; j++) {
-            for (let k = 0; k < squadreReali.length; k++) {
-              if (j !== k) {
-                const volte = maxIncontri / 2;
-                for (let v = 0; v < volte; v++) {
-                  
-                  // Generazione dell'ID numerico basato su un Hash unico delle squadre e del round.
-                  const matchKey = divCode + "_" + squadreReali[j] + "_" + squadreReali[k] + "_" + v;
-                  const fixtureId = generateNumericHash(matchKey);
-                  
-                  // BUG FIX: Rimosso LIMIT 1 e aggiunto ORDER BY date ASC per estrarre tutti gli sconti multipli
-                  const giocataRes = await dbArchivio.prepare(
-                    "SELECT fthg, ftag, date FROM matches WHERE div = ? AND season = ? AND hometeam = ? AND awayteam = ? ORDER BY date ASC"
-                  ).bind(divCode, dbSeason, squadreReali[j], squadreReali[k]).all();
-
-                  let goalsHome = null;
-                  let goalsAway = null;
-                  let status = "Scheduled";
-                  let matchDate = "";
-
-                  if (giocataRes.results && giocataRes.results.length > v) {
-                    const g = giocataRes.results[v];
-                    goalsHome = g.fthg;
-                    goalsAway = g.ftag;
-                    status = "Played";
-                    // Assegna la data storica reale se trovata, altrimenti usa la data di oggi
-                    if (g.date) {
-                      matchDate = g.date + "T15:00:00Z";
-                    } else {
-                      matchDate = new Date().toISOString();
-                    }
-                  } else {
-                    // Se la partita è futura (Scheduled), le distribuisce una settimana dopo l'altra
-                    let d = new Date();
-                    d.setDate(d.getDate() + (j * 7));
-                    matchDate = d.toISOString();
-                  }
-
-                  matches.push({
-                    fixture_id: fixtureId,
-                    div: divCode,
-                    round: "Giornata N.D.",
-                    date: matchDate,
-                    home: squadreReali[j],
-                    away: squadreReali[k],
-                    goals_home: goalsHome,
-                    goals_away: goalsAway,
-                    status: status
-                  });
-                }
-              }
-            }
-          }
-        }
-
-        // Scrittura cumulativa del calendario ottenuto all'interno di DB SOGLIE
-        if (matches.length > 0) {
-          const queryInsert = "INSERT OR REPLACE INTO calendario_partite (fixture_id, league_id, league_div, round, event_date, home_team_name_api, home_team_id_local, away_team_name_api, away_team_id_local, goals_home, goals_away, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-          const statements = [];
-
-          for (let j = 0; j < matches.length; j++) {
-            const m = matches[j];
-            statements.push(
-              dbSoglie.prepare(queryInsert).bind(
-                m.fixture_id,
-                0, 
-                divCode,
-                m.round,
-                m.date,
-                m.home,
-                0, 
-                m.away,
-                0, 
-                m.goals_home,
-                m.goals_away,
-                m.status
-              )
-            );
-          }
-          await dbSoglie.batch(statements);
-
-          // -----------------------------------------------------------------
-          // MOTORE PREVENTIVO DI SIMULAZIONE BASATO SU POISSON E MONTE CARLO
-          // -----------------------------------------------------------------
-          const teamsList = [];
-          const tSet = new Set();
-          for (let j = 0; j < matches.length; j++) {
-            tSet.add(matches[j].home);
-            tSet.add(matches[j].away);
-          }
-          tSet.forEach(function(t) { teamsList.push(t); });
-
-          const numTeams = teamsList.length;
-          const teamToIndex = {};
-          for (let j = 0; j < numTeams; j++) {
-            teamToIndex[teamsList[j]] = j;
-          }
-
-          // Carica i parametri di forza attacco, difesa e fattore campo da DB ARCHIVIO (tabella team_ratings)
-          const paramList = [];
-          for (let j = 0; j < numTeams; j++) {
-            const tName = teamsList[j];
-            const strengthRes = await dbArchivio.prepare(
-              "SELECT r.alpha, r.beta, e.h_factor FROM team_ratings r LEFT JOIN team_aliases a ON r.team_name = a.alias LEFT JOIN classifica_elite e ON a.team_id = e.team_id WHERE r.team_name = ?"
-            ).bind(tName).first();
-
-            let attVal = 1.0;
-            let defVal = 1.0;
-            let hVal = 0.3;
-            if (strengthRes) {
-              if (strengthRes.alpha !== null) attVal = strengthRes.alpha;
-              if (strengthRes.beta !== null) defVal = strengthRes.beta;
-              if (strengthRes.h_factor !== null) hVal = strengthRes.h_factor;
-            }
-            paramList.push({ att: attVal, def: defVal, home_adv: hVal });
-          }
-
-          // INTEGRAZIONE: Autocalcolo dinamico delle forze se la tabella team_ratings è vuota per questo campionato
-          let hasRealStats = false;
-          for (let j = 0; j < numTeams; j++) {
-            if (paramList[j].att !== 1.0 || paramList[j].def !== 1.0) {
-              hasRealStats = true;
-              break;
-            }
-          }
-
-          if (!hasRealStats) {
-            let totalPlayed = 0;
-            let totalGoals = 0;
-            const teamGoalsScored = new Array(numTeams).fill(0);
-            const teamGoalsConceded = new Array(numTeams).fill(0);
-            const teamPlayedCount = new Array(numTeams).fill(0);
-
-            for (let j = 0; j < matches.length; j++) {
-              const m = matches[j];
-              if (m.status === "Played" && m.goals_home !== null && m.goals_away !== null) {
-                const hIdx = teamToIndex[m.home];
-                const aIdx = teamToIndex[m.away];
-                teamGoalsScored[hIdx] += m.goals_home;
-                teamGoalsConceded[hIdx] += m.goals_away;
-                teamPlayedCount[hIdx]++;
-
-                teamGoalsScored[aIdx] += m.goals_away;
-                teamGoalsConceded[aIdx] += m.goals_home;
-                teamPlayedCount[aIdx]++;
-
-                totalGoals += (m.goals_home + m.goals_away);
-                totalPlayed++;
-              }
-            }
-
-            const avgGoalsPerTeamGame = totalPlayed > 0 ? (totalGoals / (totalPlayed * 2)) : 1.2;
-
-            for (let j = 0; j < numTeams; j++) {
-              const played = teamPlayedCount[j] || 1;
-              const scoredAvg = teamGoalsScored[j] / played;
-              const concededAvg = teamGoalsConceded[j] / played;
-
-              paramList[j] = {
-                att: avgGoalsPerTeamGame > 0 ? (scoredAvg / avgGoalsPerTeamGame) : 1.0,
-                def: avgGoalsPerTeamGame > 0 ? (concededAvg / avgGoalsPerTeamGame) : 1.0,
-                home_adv: 0.25
-              };
-            }
-          }
-
-          const basePoints = new Array(numTeams).fill(0);
-          const unplayedList = [];
-
-          // Separa i risultati consolidati dai futuri, calcolandone la probabilità per la simulazione
-          for (let j = 0; j < matches.length; j++) {
-            const m = matches[j];
-            const homeIdx = teamToIndex[m.home];
-            const awayIdx = teamToIndex[m.away];
-
-            if (m.status === "Played" && m.goals_home !== null && m.goals_away !== null) {
-              if (m.goals_home > m.goals_away) {
-                basePoints[homeIdx] += 3;
-              } else if (m.goals_home === m.goals_away) {
-                basePoints[homeIdx] += 1;
-                basePoints[awayIdx] += 1;
-              } else {
-                basePoints[awayIdx] += 3;
-              }
-            } else {
-              const hParam = paramList[homeIdx];
-              const aParam = paramList[awayIdx];
-
-              const lambda = hParam.att * aParam.def * (1.0 + hParam.home_adv);
-              const mu = aParam.att * hParam.def;
-
-              let pH = 0; let pD = 0; let pA = 0;
-              for (let h = 0; h <= 5; h++) {
-                for (let a = 0; a <= 5; a++) {
-                  const p = poissonProb(h, lambda) * poissonProb(a, mu);
-                  if (h > a) pH += p;
-                  else if (h === a) pD += p;
-                  else pA += p;
-                }
-              }
-              let totalP = pH + pD + pA;
-              if (totalP === 0) totalP = 1.0;
-
-              unplayedList.push({
-                homeIdx: homeIdx,
-                awayIdx: awayIdx,
-                probH: pH / totalP,
-                probD: pD / totalP,
-                probA: pA / totalP
-              });
-            }
-          }
-
-          const totalPoints = new Array(numTeams).fill(0);
-          const wins = new Array(numTeams).fill(0);
-          const europe = new Array(numTeams).fill(0);
-          const relegation = new Array(numTeams).fill(0);
-
-          // Esecuzione immediata in memoria di 2.000 stagioni complete per massima precisione
-          for (let sim = 0; sim < 2000; sim++) {
-            const simPoints = new Array(numTeams);
-            for (let t = 0; t < numTeams; t++) {
-              simPoints[t] = basePoints[t];
-            }
-
-            for (let j = 0; j < unplayedList.length; j++) {
-              const u = unplayedList[j];
-              const rand = Math.random();
-
-              if (rand < u.probH) {
-                simPoints[u.homeIdx] += 3;
-              } else if (rand < u.probH + u.probD) {
-                simPoints[u.homeIdx] += 1;
-                simPoints[u.awayIdx] += 1;
-              } else {
-                simPoints[u.awayIdx] += 3;
-              }
-            }
-
-            const indices = [];
-            for (let t = 0; t < numTeams; t++) {
-              indices.push(t);
-            }
-            indices.sort(function(a, b) {
-              return simPoints[b] - simPoints[a];
-            });
-
-            for (let rank = 0; rank < numTeams; rank++) {
-              const tIdx = indices[rank];
-              totalPoints[tIdx] += simPoints[tIdx];
-              if (rank === 0) wins[tIdx]++;
-              if (rank < 4) europe[tIdx]++;
-              if (rank >= numTeams - 3) relegation[tIdx]++;
-            }
-          }
-
-          // Genera il pacchetto delle query di salvataggio dei dati simulati nel DB SOGLIE
-          const simStatements = [];
-          const querySimInsert = "INSERT OR REPLACE INTO simulazioni_classifica (league_div, team_name, avg_points, win_pct, europe_pct, relegation_pct) VALUES (?, ?, ?, ?, ?, ?)";
-          
-          for (let j = 0; j < numTeams; j++) {
-            const tName = teamsList[j];
-            const avgPoints = totalPoints[j] / 2000;
-            const winPct = (wins[j] / 2000) * 100;
-            const europePct = (europe[j] / 2000) * 100;
-            const relegationPct = (relegation[j] / 2000) * 100;
-
-            simStatements.push(
-              dbSoglie.prepare(querySimInsert).bind(
-                divCode,
-                tName,
-                avgPoints,
-                winPct,
-                europePct,
-                relegationPct
-              )
-            );
-          }
-          await dbSoglie.batch(simStatements);
-        }
-
-        // Imposta lo stato del singolo campionato a completed (100.0%)
-        await dbSoglie.batch([
-          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'completed')").bind(divCode),
-          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('current_season', ?)").bind(rilevataStagione),
-          dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', ?)").bind(new Date().toLocaleString("it-IT"))
-        ]);
+        // Avvia l'elaborazione sincrona robusta per la singola lega a 2000 simulazioni (manuale)
+        await syncAndSimulateLeague(divCode, dbArchivio, dbSoglie, 2000);
 
         return new Response(JSON.stringify({ success: true }), {
           headers: { "Content-Type": "application/json" }
@@ -1087,6 +767,8 @@ async function syncAndSimulateLeague(divCode, dbArchivio, dbSoglie, nSim) {
   ).bind(divCode).first();
   
   rilevataStagione = seasonRes && seasonRes.ultima ? seasonRes.ultima : "2025/26";
+  
+  // CORREZIONE: Utilizzato let per dichiarare correttamente dbSeason in Strict Mode
   let dbSeason = translateSeason(rilevataStagione);
   
   const teamsRes = await dbArchivio.prepare(
@@ -1192,6 +874,8 @@ async function syncAndSimulateLeague(divCode, dbArchivio, dbSoglie, nSim) {
       teamToIndex[teamsList[j]] = j;
     }
 
+    // CORREZIONE: Interroga la tabella team_ratings collegandola in LEFT JOIN con classifica_elite
+    // tramite l'alias e l'ID numerico team_id verificato sul database per estrarre attacco, difesa e fattore casa
     const paramList = [];
     for (let j = 0; j < numTeams; j++) {
       const tName = teamsList[j];
@@ -1210,6 +894,7 @@ async function syncAndSimulateLeague(divCode, dbArchivio, dbSoglie, nSim) {
       paramList.push({ att: attVal, def: defVal, home_adv: hVal });
     }
 
+    // INTEGRAZIONE: Autocalcolo dinamico delle forze se la tabella team_ratings è vuota per questo campionato
     let hasRealStats = false;
     for (let j = 0; j < numTeams; j++) {
       if (paramList[j].att !== 1.0 || paramList[j].def !== 1.0) {
