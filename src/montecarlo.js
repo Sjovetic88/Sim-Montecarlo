@@ -10,7 +10,7 @@ const LEAGUE_FLAGS = {
   "ARG": "🇦🇷", "B1": "🇧🇪", "BRA": "🇧🇷", "CHN": "🇨🇳", "D1": "🇩🇪", "D2": "🇩🇪",
   "DNK": "🇩🇰", "IRL": "🇮🇪", "MEX": "🇲🇽", "NOR": "🇳🇴", "P1": "🇵🇹", "RUS": "🇷🇺",
   "SWE": "🇸🇪", "T1": "🇹🇷", "USA": "🇺🇸", "E0": "🇬🇧", "E1": "🇬🇧", "I1": "🇮🇹",
-  "I2": "🇮🇹", "SP1": "🇪🇸", "F1": "🇫🇷", "N1": "🇳🇱", "G1": "🇬🇷", "AUT": "🇦🇹", "SWZ": "🇨涼"
+  "I2": "🇮🇹", "SP1": "🇪🇸", "F1": "🇫🇷", "N1": "🇳🇱", "G1": "🇬🇷", "AUT": "🇦🇹", "SWZ": "🇨🇭"
 };
 
 // Dizionario statico contenente i nomi estesi dei campionati gestiti
@@ -317,7 +317,7 @@ export default {
         html += ".tab-content { display:none; margin-top:10px; }";
         html += ".tab-content.active { display:block; }";
         html += ".bottom-nav { position:fixed; bottom:0; left:0; right:0; background:#090d16; border-top:1px solid #1e293b; display:flex; justify-content:space-around; padding:10px 0; z-index:1000; }";
-        html += ".nav-btn { background:none; border:none; display:flex; flex-direction:column; align-items:center; color:#64748b; cursor:pointer; width:20%; }";
+        html += ".nav-btn { background:none; border:none; display:flex; flex-direction:column; align-items:center; color:#64748b; cursor:pointer; width:16.6%; }";
         html += ".nav-btn-active { color:#00ebff !important; }";
         html += ".nav-icon { font-size:20px; margin-bottom:3px; }";
         html += ".nav-label { font-size:7.5px; font-weight:bold; text-transform:uppercase; }";
@@ -415,6 +415,7 @@ export default {
         html += "let queueIndex = -1;";
         html += "let isSyncRunning = false;";
         html += "let wakeLock = null;";
+        html += "const SLUGS_MAP = " + JSON.stringify(slugsMap) + ";";
 
         // Richiede il blocco del sonno per tenere lo schermo sempre attivo
         html += "async function requestWakeLock() {";
@@ -875,21 +876,21 @@ async function syncAndSimulateLeague(divCode, dbArchivio, dbSoglie, nSim) {
       teamToIndex[teamsList[j]] = j;
     }
 
-    // CORREZIONE: Interroga la tabella team_ratings collegandola in LEFT JOIN con classifica_elite
-    // tramite l'alias e l'ID numerico team_id verificato sul database per estrarre attacco, difesa e fattore casa
+    // CORREZIONE: Interroga la tabella classifica_elite tramite team_aliases 
+    // usando la colonna verificata team_id (trattino basso) senza errori
     const paramList = [];
     for (let j = 0; j < numTeams; j++) {
       const tName = teamsList[j];
       const strengthRes = await dbArchivio.prepare(
-        "SELECT r.alpha, r.beta, e.h_factor FROM team_ratings r LEFT JOIN team_aliases a ON r.team_name = a.alias LEFT JOIN classifica_elite e ON a.team_id = e.team_id WHERE r.team_name = ?"
+        "SELECT e.attacco, e.difesa, e.h_factor FROM team_aliases a LEFT JOIN classifica_elite e ON a.team_id = e.team_id WHERE a.alias = ?"
       ).bind(tName).first();
 
       let attVal = 1.0;
       let defVal = 1.0;
       let hVal = 0.3;
       if (strengthRes) {
-        if (strengthRes.alpha !== null) attVal = strengthRes.alpha;
-        if (strengthRes.beta !== null) defVal = strengthRes.beta;
+        if (strengthRes.attacco !== null) attVal = strengthRes.attacco;
+        if (strengthRes.difesa !== null) defVal = strengthRes.difesa;
         if (strengthRes.h_factor !== null) hVal = strengthRes.h_factor;
       }
       paramList.push({ att: attVal, def: defVal, home_adv: hVal });
