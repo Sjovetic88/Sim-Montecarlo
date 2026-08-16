@@ -22,19 +22,6 @@ const LEAGUE_NAMES = {
   "I2": "ITALY SERIE B", "SP1": "SPAIN LA LIGA", "F1": "FRANCE LIGUE 1", "N1": "NETHERLANDS EREDIVISIE"
 };
 
-// Dizionario statico contenente gli slug pre-configurati ufficiali di Matchesio con anno
-const DEFAULT_SLUGS = {
-  "ARG": "argentina-liga-profesional-2025", "B1": "belgium-jupiler-league-2025-2026", "BRA": "brazil-serie-a-2025",
-  "CHN": "china-super-league-2025", "D1": "germany-bundesliga-2025-2026", "D2": "germany-2-bundesliga-2025-2026",
-  "DNK": "denmark-superligaen-2025-2026", "IRL": "ireland-premier-division-2026", "MEX": "mexico-liga-mx-2025",
-  "NOR": "norway-eliteserien-2025", "P1": "portugal-primeira-liga-2025-2026", "RUS": "russia-premier-league-2025-2026",
-  "SWE": "sweden-allsvenskan-2025", "T1": "turkey-super-lig-2025-2026", "USA": "usa-mls-2025",
-  "E0": "england-premier-league-2025-2026", "E1": "england-championship-2025-2026", "I1": "italy-serie-a-2025-2026",
-  "I2": "italy-serie-b-2025-2026", "SP1": "spain-la-liga-2025-2026", "F1": "france-ligue-1-2025-2026",
-  "N1": "netherlands-eredivisie-2025-2026", "G1": "greece-super-league-2025-2026", "AUT": "austria-bundesliga-2025-2026",
-  "SWZ": "switzerland-super-league-2025-2026"
-};
-
 // Calcola il fattoriale di un numero intero (necessario per la formula di Poisson)
 function factorial(n) {
   let res = 1;
@@ -121,25 +108,24 @@ export default {
     }
 
     // -------------------------------------------------------------------------
-    // ROTTA 1.5: POST /save-slug
-    // Salva o aggiorna lo slug di Matchesio per un determinato campionato
+    // ROTTA 1.3: GET /cron-trigger
+    // Endpoint richiamabile da cron-job.org per l'elaborazione automatica delle 7:00
     // -------------------------------------------------------------------------
-    if (url.pathname === "/save-slug" && request.method === "POST") {
-      try {
-        const league = url.searchParams.get("league");
-        const slug = url.searchParams.get("slug");
-        if (!league) return new Response(JSON.stringify({ error: "Lega mancante" }), { status: 400 });
-        
-        await dbArchivio.prepare(
-          "INSERT OR REPLACE INTO matchesio_slugs (league_div, slug1, slug2, slug3) VALUES (?, ?, NULL, NULL)"
-        ).bind(league, slug).run();
-        
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (err) {
-        return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+    if (url.pathname === "/cron-trigger") {
+      const token = url.searchParams.get("token");
+      const expectedToken = env.CRON_TOKEN || "goldbet_cron_secret_777";
+      if (token !== expectedToken) {
+        return new Response("Non autorizzato", { status: 401 });
       }
+
+      // Avvia l'elaborazione sequenziale automatica di tutte le leghe attive in background
+      ctx.waitUntil(
+        runAutomatedCronSync(dbArchivio, dbSoglie)
+      );
+
+      return new Response(JSON.stringify({ success: true, message: "Sincronizzazione automatica avviata" }), {
+        headers: { "Content-Type": "application/json" }
+      });
     }
 
     // -------------------------------------------------------------------------
@@ -304,16 +290,6 @@ export default {
           }
         }
 
-        // Estrazione degli slug correnti per il pannello di modifica
-        const slugsRes = await dbArchivio.prepare("SELECT league_div, slug1 FROM matchesio_slugs").all();
-        const slugsMap = {};
-        if (slugsRes.results) {
-          for (let s = 0; s < slugsRes.results.length; s++) {
-            const r = slugsRes.results[s];
-            slugsMap[r.league_div] = r.slug1 || "";
-          }
-        }
-
         let html = "<!DOCTYPE html><html><head><title>Goldbet Montecarlo</title>";
         html += "<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'>";
         html += "<style>";
@@ -341,22 +317,11 @@ export default {
         html += ".tab-content { display:none; margin-top:10px; }";
         html += ".tab-content.active { display:block; }";
         html += ".bottom-nav { position:fixed; bottom:0; left:0; right:0; background:#090d16; border-top:1px solid #1e293b; display:flex; justify-content:space-around; padding:10px 0; z-index:1000; }";
-        html += ".nav-btn { background:none; border:none; display:flex; flex-direction:column; align-items:center; color:#64748b; cursor:pointer; width:16.6%; }";
+        html += ".nav-btn { background:none; border:none; display:flex; flex-direction:column; align-items:center; color:#64748b; cursor:pointer; width:20%; }";
         html += ".nav-btn-active { color:#00ebff !important; }";
         html += ".nav-icon { font-size:20px; margin-bottom:3px; }";
         html += ".nav-label { font-size:7.5px; font-weight:bold; text-transform:uppercase; }";
         html += ".nitro-active { color:#f97316 !important; filter:drop-shadow(0 0 8px rgba(249,115,22,0.6)); }";
-        html += ".modal { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.85); z-index:2000; padding:20px; overflow-y:auto; }";
-        html += ".modal-content { background:#0f172a; border:1px solid #1e293b; border-radius:8px; padding:20px; max-width:440px; margin:0 auto; }";
-        html += ".modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #1e293b; padding-bottom:10px; }";
-        html += ".modal-title { font-size:18px; font-weight:bold; color:#fff; }";
-        html += ".close-btn { background:none; border:none; color:#ef4444; font-size:20px; cursor:pointer; }";
-        html += ".input-row { display:flex; flex-direction:column; margin-bottom:12px; border-bottom:1px solid #1e293b; padding-bottom:10px; }";
-        html += ".input-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }";
-        html += ".input-label { font-size:12px; color:#cbd5e1; font-weight:bold; }";
-        html += ".link-url-indicator { font-size:10px; color:#00ebff; text-decoration:none; margin-top:4px; display:inline-block; }";
-        html += ".input-field { background:#090d16; border:1px solid #1e293b; color:#fff; padding:6px; border-radius:4px; width:100%; font-size:12px; box-sizing:border-box; }";
-        html += ".save-btn { background:#00ebff; color:#000; border:none; padding:8px 12px; border-radius:4px; cursor:pointer; font-weight:bold; width:100%; margin-top:15px; }";
         html += "table { width:100%; border-collapse:collapse; font-size:11px; color:#cbd5e1; margin-top:5px; }";
         html += "th,td { padding:6px; text-align:left; border-bottom:1px solid #1e293b; }";
         html += "th { color:#94a3b8; font-weight:bold; }";
@@ -432,34 +397,7 @@ export default {
         html += "</div>";
         html += "</div>";
 
-        // MODAL SETTINGS (MODIFICA LINK SLUG CON COMPLETO INDIRIZZO CLICCABILE)
-        html += "<div id='slugs-modal' class='modal'>";
-        html += "<div class='modal-content'>";
-        html += "<div class='modal-header'><span class='modal-title'>⚙️ Configurazione Link</span><button class='close-btn' onclick='closeSlugsModal()'>✕</button></div>";
-        html += "<div style='max-height: 300px; overflow-y: auto; padding-right: 5px;'>";
-        for (let i = 0; i < listaLeghe.length; i++) {
-          const l = listaLeghe[i];
-          if (l.is_active !== 0) {
-            const code = l.id;
-            const currentSlugVal = slugsMap[code] || DEFAULT_SLUGS[code] || "";
-            html += "<div class='input-row'>";
-            html += "<div class='input-header'>";
-            html += "<span class='input-label'>" + l.emoji + " " + code + "</span>";
-            html += "</div>";
-            html += "<input id='slug-input-" + code + "' class='input-field' type='text' value='" + currentSlugVal + "' oninput='updateLinkIndicator(" + '"' + code + '"' + ")'>";
-            
-            // Visualizzazione dell'indirizzo completo cliccabile per diagnostica istantanea
-            const fullLinkUrl = "https://www.matchesio.com/competition/" + currentSlugVal + "/export/json";
-            html += "<a id='link-url-" + code + "' class='link-url-indicator' href='" + fullLinkUrl + "' target='_blank'>🔗 Test Link Export</a>";
-            html += "</div>";
-          }
-        }
-        html += "</div>";
-        html += "<button class='save-btn' onclick='saveSlugs()'>SALVA MODIFICHE</button>";
-        html += "</div>";
-        html += "</div>";
-
-        // BARRA DI NAVIGAZIONE A 6 PULSANTI (ALL, START, PAUSA, NITRO, LINK, RESET)
+        // BARRA DI NAVIGAZIONE A 5 PULSANTI (ALL, START, PAUSA, NITRO, RESET)
         html += "<div class='bottom-nav'>";
         html += "<button onclick='toggleAll()' class='nav-btn nav-btn-active'><span class='nav-icon'>☑️</span><span class='nav-label'>ALL</span></button>";
         html += "<button id='btn-start' onclick='startSequentialSync()' class='nav-btn' style='color: #10b981;'><span class='nav-icon'>▶️</span><span class='nav-label'>START</span></button>";
@@ -467,7 +405,6 @@ export default {
         
         const isNitroActive = nitroMode === "1" ? "nitro-active" : "";
         html += "<button id='btn-nitro' onclick='toggleNitro()' class='nav-btn " + isNitroActive + "'><span class='nav-icon'>🔥</span><span class='nav-label'>NITRO</span></button>";
-        html += "<button onclick='openSlugsModal()' class='nav-btn' style='color: #a855f7;'><span class='nav-icon'>⚙️</span><span class='nav-label'>LINK</span></button>";
         html += "<button id='btn-reset' onclick='triggerReset()' class='nav-btn' style='color: #ef4444;'><span class='nav-icon'>⛔</span><span class='nav-label'>RESET</span></button>";
         html += "</div>";
 
@@ -477,7 +414,6 @@ export default {
         html += "let queueIndex = -1;";
         html += "let isSyncRunning = false;";
         html += "let wakeLock = null;";
-        html += "const SLUGS_MAP = " + JSON.stringify(slugsMap) + ";";
 
         // Richiede il blocco del sonno per tenere lo schermo sempre attivo
         html += "async function requestWakeLock() {";
@@ -506,35 +442,6 @@ export default {
         html += "    pauseSequentialSync();";
         html += "  }";
         html += "});";
-
-        // Gestione delle finestre modali
-        html += "function openSlugsModal() { document.getElementById('slugs-modal').style.display = 'block'; }";
-        html += "function closeSlugsModal() { document.getElementById('slugs-modal').style.display = 'none'; }";
-
-        // Aggiorna dinamicamente l'indicatore URL visibile per il test istantaneo
-        html += "function updateLinkIndicator(code) {";
-        html += "  const val = document.getElementById('slug-input-' + code).value.trim();";
-        html += "  const a = document.getElementById('link-url-' + code);";
-        html += "  if (a) {";
-        html += "    a.href = 'https://www.matchesio.com/competition/' + val + '/export/json';";
-        html += "  }";
-        html += "}";
-
-        // Salvataggio asincrono dei link modificati tramite AJAX
-        html += "async function saveSlugs() {";
-        html += "  const inputs = document.querySelectorAll('.input-field');";
-        html += "  for (let i = 0; i < inputs.length; i++) {";
-        html += "    const input = inputs[i];";
-        html += "    const code = input.id.replace('slug-input-', '');";
-        html += "    const val = input.value.trim();";
-        html += "    if (SLUGS_MAP[code] !== val) {";
-        html += "      await fetch('/save-slug?league=' + code + '&slug=' + encodeURIComponent(val), { method: 'POST' });";
-        html += "      SLUGS_MAP[code] = val;";
-        html += "    }";
-        html += "  }";
-        html += "  closeSlugsModal();";
-        html += "  alert('Link di configurazione salvati!');";
-        html += "}";
 
         // Espande e mostra i dettagli del campionato con la mini-barra di navigazione (Quoted correttamente tramite String.fromCharCode)
         html += "async function toggleLeague(code) {";
@@ -733,7 +640,6 @@ export default {
         html += "async function triggerReset() {";
         html += "  if (!confirm('Vuoi davvero cancellare il calendario e le simulazioni?')) return;";
         html += "  await fetch('/reset', { method: 'POST' });";
-        html += "  closeSlugsModal();";
         html += "  updateStatus();";
         html += "}";
 
@@ -803,147 +709,79 @@ export default {
           dbSoglie.prepare("DELETE FROM simulazioni_classifica WHERE league_div = ?").bind(divCode)
         ]);
 
-        // Caricamento dei 3 indirizzi (slug) alternativi associati al campionato in ARCHIVIO
-        let slugVal = null;
-        const slugDbRes = await dbArchivio.prepare("SELECT slug1, slug2, slug3 FROM matchesio_slugs WHERE league_div = ?").bind(divCode).first();
-        if (slugDbRes) {
-          const tempArr = [];
-          if (slugDbRes.slug1) tempArr.push(slugDbRes.slug1);
-          if (slugDbRes.slug2) tempArr.push(slugDbRes.slug2);
-          if (slugDbRes.slug3) tempArr.push(slugDbRes.slug3);
-          slugVal = tempArr.join(",");
-        }
-
         let matches = [];
 
-        // BINARIO A: Importazione automatica da matchesio.com se esiste lo slug di riferimento
-        if (slugVal) {
-          const candidates = slugVal.split(",");
-          let apiResponse = null;
+        // Generazione combinatoria interna locale al 100% (Matchesio rimosso)
+        const seasonRes = await dbArchivio.prepare(
+          "SELECT MAX(season) as ultima FROM matches WHERE div = ?"
+        ).bind(divCode).first();
+        
+        rilevataStagione = seasonRes && seasonRes.ultima ? seasonRes.ultima : "2025/26";
+        dbSeason = translateSeason(rilevataStagione);
+        
+        const teamsRes = await dbArchivio.prepare(
+          "SELECT DISTINCT hometeam FROM matches WHERE div = ? AND season = ?"
+        ).bind(divCode, dbSeason).all();
 
-          for (let c = 0; c < candidates.length; c++) {
-            const currentSlug = candidates[c];
-            const urlExport = "https://www.matchesio.com/competition/" + currentSlug + "/export/json";
-            
-            apiResponse = await fetch(urlExport, {
-              method: "GET",
-              headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-              }
-            });
-
-            if (apiResponse.ok) {
-              break; 
-            }
-          }
-
-          if (apiResponse && apiResponse.ok) {
-            const rawMatches = await apiResponse.json();
-            if (rawMatches && rawMatches.length > 0) {
-              rilevataStagione = rawMatches[0].season || "2025/26";
-              
-              for (let j = 0; j < rawMatches.length; j++) {
-                const m = rawMatches[j];
-                const timestampPartita = m.date + "T" + m.time + ":00Z";
-                let goalsHome = null;
-                let goalsAway = null;
-                if (m.status === "Played" && m.result && m.result.indexOf("-") !== -1) {
-                  const score = m.result.split("-");
-                  goalsHome = parseInt(score[0].trim(), 10);
-                  goalsAway = parseInt(score[1].trim(), 10);
-                }
-                matches.push({
-                  fixture_id: m.id,
-                  div: divCode,
-                  round: "Giornata " + m.matchday,
-                  date: timestampPartita,
-                  home: m.homeTeam,
-                  away: m.awayTeam,
-                  goals_home: goalsHome,
-                  goals_away: goalsAway,
-                  status: m.status
-                });
-              }
-            }
+        const squadreReali = [];
+        if (teamsRes.results) {
+          for (let j = 0; j < teamsRes.results.length; j++) {
+            squadreReali.push(teamsRes.results[j].hometeam);
           }
         }
 
-        // Applica il traduttore dinamico alla stagione rilevata per allinearla con il DB ARCHIVIO (2026 o 2526)
-        let dbSeason = translateSeason(rilevataStagione);
+        if (squadreReali.length >= 2) {
+          const maxIncontri = squadreReali.length === 10 ? 4 : 2;
 
-        // BINARIO B: Generazione combinatoria interna se non esiste lo slug o il download fallisce
-        if (!slugVal || matches.length === 0) {
-          const seasonRes = await dbArchivio.prepare(
-            "SELECT MAX(season) as ultima FROM matches WHERE div = ?"
-          ).bind(divCode).first();
-          
-          rilevataStagione = seasonRes && seasonRes.ultima ? seasonRes.ultima : "2025/26";
-          dbSeason = translateSeason(rilevataStagione);
-          
-          const teamsRes = await dbArchivio.prepare(
-            "SELECT DISTINCT hometeam FROM matches WHERE div = ? AND season = ?"
-          ).bind(divCode, dbSeason).all();
+          for (let j = 0; j < squadreReali.length; j++) {
+            for (let k = 0; k < squadreReali.length; k++) {
+              if (j !== k) {
+                const volte = maxIncontri / 2;
+                for (let v = 0; v < volte; v++) {
+                  
+                  // Generazione dell'ID numerico basato su un Hash unico delle squadre e del round.
+                  const matchKey = divCode + "_" + squadreReali[j] + "_" + squadreReali[k] + "_" + v;
+                  const fixtureId = generateNumericHash(matchKey);
+                  
+                  // BUG FIX: Rimosso LIMIT 1 e aggiunto ORDER BY date ASC per estrarre tutti gli sconti multipli
+                  const giocataRes = await dbArchivio.prepare(
+                    "SELECT fthg, ftag, date FROM matches WHERE div = ? AND season = ? AND hometeam = ? AND awayteam = ? ORDER BY date ASC"
+                  ).bind(divCode, dbSeason, squadreReali[j], squadreReali[k]).all();
 
-          const squadreReali = [];
-          if (teamsRes.results) {
-            for (let j = 0; j < teamsRes.results.length; j++) {
-              squadreReali.push(teamsRes.results[j].hometeam);
-            }
-          }
+                  let goalsHome = null;
+                  let goalsAway = null;
+                  let status = "Scheduled";
+                  let matchDate = "";
 
-          if (squadreReali.length >= 2) {
-            const maxIncontri = squadreReali.length === 10 ? 4 : 2;
-
-            for (let j = 0; j < squadreReali.length; j++) {
-              for (let k = 0; k < squadreReali.length; k++) {
-                if (j !== k) {
-                  const volte = maxIncontri / 2;
-                  for (let v = 0; v < volte; v++) {
-                    
-                    // Generazione dell'ID numerico basato su un Hash unico delle squadre e del round.
-                    const matchKey = divCode + "_" + squadreReali[j] + "_" + squadreReali[k] + "_" + v;
-                    const fixtureId = generateNumericHash(matchKey);
-                    
-                    // BUG FIX: Rimosso LIMIT 1 e aggiunto ORDER BY date ASC per estrarre tutti gli sconti multipli
-                    const giocataRes = await dbArchivio.prepare(
-                      "SELECT fthg, ftag, date FROM matches WHERE div = ? AND season = ? AND hometeam = ? AND awayteam = ? ORDER BY date ASC"
-                    ).bind(divCode, dbSeason, squadreReali[j], squadreReali[k]).all();
-
-                    let goalsHome = null;
-                    let goalsAway = null;
-                    let status = "Scheduled";
-                    let matchDate = "";
-
-                    if (giocataRes.results && giocataRes.results.length > v) {
-                      const g = giocataRes.results[v];
-                      goalsHome = g.fthg;
-                      goalsAway = g.ftag;
-                      status = "Played";
-                      // Assegna la data storica reale se trovata, altrimenti usa la data di oggi
-                      if (g.date) {
-                        matchDate = g.date + "T15:00:00Z";
-                      } else {
-                        matchDate = new Date().toISOString();
-                      }
+                  if (giocataRes.results && giocataRes.results.length > v) {
+                    const g = giocataRes.results[v];
+                    goalsHome = g.fthg;
+                    goalsAway = g.ftag;
+                    status = "Played";
+                    // Assegna la data storica reale se trovata, altrimenti usa la data di oggi
+                    if (g.date) {
+                      matchDate = g.date + "T15:00:00Z";
                     } else {
-                      // Se la partita è futura (Scheduled), le distribuisce una settimana dopo l'altra
-                      let d = new Date();
-                      d.setDate(d.getDate() + (j * 7));
-                      matchDate = d.toISOString();
+                      matchDate = new Date().toISOString();
                     }
-
-                    matches.push({
-                      fixture_id: fixtureId,
-                      div: divCode,
-                      round: "Giornata N.D.",
-                      date: matchDate,
-                      home: squadreReali[j],
-                      away: squadreReali[k],
-                      goals_home: goalsHome,
-                      goals_away: goalsAway,
-                      status: status
-                    });
+                  } else {
+                    // Se la partita è futura (Scheduled), le distribuisce una settimana dopo l'altra
+                    let d = new Date();
+                    d.setDate(d.getDate() + (j * 7));
+                    matchDate = d.toISOString();
                   }
+
+                  matches.push({
+                    fixture_id: fixtureId,
+                    div: divCode,
+                    round: "Giornata N.D.",
+                    date: matchDate,
+                    home: squadreReali[j],
+                    away: squadreReali[k],
+                    goals_home: goalsHome,
+                    goals_away: goalsAway,
+                    status: status
+                  });
                 }
               }
             }
@@ -993,8 +831,7 @@ export default {
             teamToIndex[teamsList[j]] = j;
           }
 
-          // CORREZIONE: Interroga la tabella team_ratings collegandola in LEFT JOIN con classifica_elite
-          // per estrarre alpha, beta e h_factor correttamente senza mandare in crash la query
+          // Carica i parametri di forza attacco, difesa e fattore campo da DB ARCHIVIO (tabella team_ratings)
           const paramList = [];
           for (let j = 0; j < numTeams; j++) {
             const tName = teamsList[j];
@@ -1201,3 +1038,341 @@ export default {
     return new Response("Rotta non esistente", { status: 404 });
   }
 };
+
+// =========================================================================
+// FUNZIONI SUPPORTO BACKGROUND CRON AUTOMATICO (token e 1000 simulazioni)
+// =========================================================================
+
+// Funzione interna richiamata in background dal cron-job esterno delle 7:00
+async function runAutomatedCronSync(dbArchivio, dbSoglie) {
+  try {
+    await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'running')").run();
+    await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', NULL)").run();
+
+    const leghe = await dbArchivio.prepare("SELECT id FROM leagues WHERE is_active = 1").all();
+    const listaLeghe = leghe.results || [];
+
+    for (let i = 0; i < listaLeghe.length; i++) {
+      const code = listaLeghe[i].id;
+
+      // Esegue la sincronizzazione autonoma riducendo a 1.000 simulazioni per non superare i limiti di CPU
+      await syncAndSimulateLeague(code, dbArchivio, dbSoglie, 1000);
+
+      // Piccola pausa di sicurezza tra un campionato e l'altro
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+
+    await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'idle')").run();
+  } catch (err) {
+    await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('status', 'idle')").run();
+    await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('error', ?)").bind(err.message).run();
+  }
+}
+
+// Sincronizzatore unico riutilizzabile sia per l'avvio manuale che per il cron automatico
+async function syncAndSimulateLeague(divCode, dbArchivio, dbSoglie, nSim) {
+  let rilevataStagione = "N.D.";
+
+  await dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'syncing')").bind(divCode).run();
+
+  await dbSoglie.batch([
+    dbSoglie.prepare("DELETE FROM calendario_partite WHERE league_div = ?").bind(divCode),
+    dbSoglie.prepare("DELETE FROM simulazioni_classifica WHERE league_div = ?").bind(divCode)
+  ]);
+
+  let matches = [];
+
+  const seasonRes = await dbArchivio.prepare(
+    "SELECT MAX(season) as ultima FROM matches WHERE div = ?"
+  ).bind(divCode).first();
+  
+  rilevataStagione = seasonRes && seasonRes.ultima ? seasonRes.ultima : "2025/26";
+  let dbSeason = translateSeason(rilevataStagione);
+  
+  const teamsRes = await dbArchivio.prepare(
+    "SELECT DISTINCT hometeam FROM matches WHERE div = ? AND season = ?"
+  ).bind(divCode, dbSeason).all();
+
+  const squadreReali = [];
+  if (teamsRes.results) {
+    for (let j = 0; j < teamsRes.results.length; j++) {
+      squadreReali.push(teamsRes.results[j].hometeam);
+    }
+  }
+
+  if (squadreReali.length >= 2) {
+    const maxIncontri = squadreReali.length === 10 ? 4 : 2;
+
+    for (let j = 0; j < squadreReali.length; j++) {
+      for (let k = 0; k < squadreReali.length; k++) {
+        if (j !== k) {
+          const volte = maxIncontri / 2;
+          for (let v = 0; v < volte; v++) {
+            const matchKey = divCode + "_" + squadreReali[j] + "_" + squadreReali[k] + "_" + v;
+            const fixtureId = generateNumericHash(matchKey);
+            
+            const giocataRes = await dbArchivio.prepare(
+              "SELECT fthg, ftag, date FROM matches WHERE div = ? AND season = ? AND hometeam = ? AND awayteam = ? ORDER BY date ASC"
+            ).bind(divCode, dbSeason, squadreReali[j], squadreReali[k]).all();
+
+            let goalsHome = null;
+            let goalsAway = null;
+            let status = "Scheduled";
+            let matchDate = "";
+
+            if (giocataRes.results && giocataRes.results.length > v) {
+              const g = giocataRes.results[v];
+              goalsHome = g.fthg;
+              goalsAway = g.ftag;
+              status = "Played";
+              if (g.date) {
+                matchDate = g.date + "T15:00:00Z";
+              } else {
+                matchDate = new Date().toISOString();
+              }
+            } else {
+              let d = new Date();
+              d.setDate(d.getDate() + (j * 7));
+              matchDate = d.toISOString();
+            }
+
+            matches.push({
+              fixture_id: fixtureId,
+              div: divCode,
+              round: "Giornata N.D.",
+              date: matchDate,
+              home: squadreReali[j],
+              away: squadreReali[k],
+              goals_home: goalsHome,
+              goals_away: goalsAway,
+              status: status
+            });
+          }
+        }
+      }
+    }
+  }
+
+  if (matches.length > 0) {
+    const queryInsert = "INSERT OR REPLACE INTO calendario_partite (fixture_id, league_id, league_div, round, event_date, home_team_name_api, home_team_id_local, away_team_name_api, away_team_id_local, goals_home, goals_away, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    const statements = [];
+
+    for (let j = 0; j < matches.length; j++) {
+      const m = matches[j];
+      statements.push(
+        dbSoglie.prepare(queryInsert).bind(
+          m.fixture_id,
+          0, 
+          divCode,
+          m.round,
+          m.date,
+          m.home,
+          0, 
+          m.away,
+          0, 
+          m.goals_home,
+          m.goals_away,
+          m.status
+        )
+      );
+    }
+    await dbSoglie.batch(statements);
+
+    const teamsList = [];
+    const tSet = new Set();
+    for (let j = 0; j < matches.length; j++) {
+      tSet.add(matches[j].home);
+      tSet.add(matches[j].away);
+    }
+    tSet.forEach(function(t) { teamsList.push(t); });
+
+    const numTeams = teamsList.length;
+    const teamToIndex = {};
+    for (let j = 0; j < numTeams; j++) {
+      teamToIndex[teamsList[j]] = j;
+    }
+
+    const paramList = [];
+    for (let j = 0; j < numTeams; j++) {
+      const tName = teamsList[j];
+      const strengthRes = await dbArchivio.prepare(
+        "SELECT r.alpha, r.beta, e.h_factor FROM team_ratings r LEFT JOIN team_aliases a ON r.team_name = a.alias LEFT JOIN classifica_elite e ON a.team_id = e.team_id WHERE r.team_name = ?"
+      ).bind(tName).first();
+
+      let attVal = 1.0;
+      let defVal = 1.0;
+      let hVal = 0.3;
+      if (strengthRes) {
+        if (strengthRes.alpha !== null) attVal = strengthRes.alpha;
+        if (strengthRes.beta !== null) defVal = strengthRes.beta;
+        if (strengthRes.h_factor !== null) hVal = strengthRes.h_factor;
+      }
+      paramList.push({ att: attVal, def: defVal, home_adv: hVal });
+    }
+
+    let hasRealStats = false;
+    for (let j = 0; j < numTeams; j++) {
+      if (paramList[j].att !== 1.0 || paramList[j].def !== 1.0) {
+        hasRealStats = true;
+        break;
+      }
+    }
+
+    if (!hasRealStats) {
+      let totalPlayed = 0;
+      let totalGoals = 0;
+      const teamGoalsScored = new Array(numTeams).fill(0);
+      const teamGoalsConceded = new Array(numTeams).fill(0);
+      const teamPlayedCount = new Array(numTeams).fill(0);
+
+      for (let j = 0; j < matches.length; j++) {
+        const m = matches[j];
+        if (m.status === "Played" && m.goals_home !== null && m.goals_away !== null) {
+          const hIdx = teamToIndex[m.home];
+          const aIdx = teamToIndex[m.away];
+          teamGoalsScored[hIdx] += m.goals_home;
+          teamGoalsConceded[hIdx] += m.goals_away;
+          teamPlayedCount[hIdx]++;
+
+          teamGoalsScored[aIdx] += m.goals_away;
+          teamGoalsConceded[aIdx] += m.goals_home;
+          teamPlayedCount[aIdx]++;
+
+          totalGoals += (m.goals_home + m.goals_away);
+          totalPlayed++;
+        }
+      }
+
+      const avgGoalsPerTeamGame = totalPlayed > 0 ? (totalGoals / (totalPlayed * 2)) : 1.2;
+
+      for (let j = 0; j < numTeams; j++) {
+        const played = teamPlayedCount[j] || 1;
+        const scoredAvg = teamGoalsScored[j] / played;
+        const concededAvg = teamGoalsConceded[j] / played;
+
+        paramList[j] = {
+          att: avgGoalsPerTeamGame > 0 ? (scoredAvg / avgGoalsPerTeamGame) : 1.0,
+          def: avgGoalsPerTeamGame > 0 ? (concededAvg / avgGoalsPerTeamGame) : 1.0,
+          home_adv: 0.25
+        };
+      }
+    }
+
+    const basePoints = new Array(numTeams).fill(0);
+    const unplayedList = [];
+
+    for (let j = 0; j < matches.length; j++) {
+      const m = matches[j];
+      const homeIdx = teamToIndex[m.home];
+      const awayIdx = teamToIndex[m.away];
+
+      if (m.status === "Played" && m.goals_home !== null && m.goals_away !== null) {
+        if (m.goals_home > m.goals_away) {
+          basePoints[homeIdx] += 3;
+        } else if (m.goals_home === m.goals_away) {
+          basePoints[homeIdx] += 1;
+          basePoints[awayIdx] += 1;
+        } else {
+          basePoints[awayIdx] += 3;
+        }
+      } else {
+        const hParam = paramList[homeIdx];
+        const aParam = paramList[awayIdx];
+
+        const lambda = hParam.att * aParam.def * (1.0 + hParam.home_adv);
+        const mu = aParam.att * hParam.def;
+
+        let pH = 0; let pD = 0; let pA = 0;
+        for (let h = 0; h <= 5; h++) {
+          for (let a = 0; a <= 5; a++) {
+            const p = poissonProb(h, lambda) * poissonProb(a, mu);
+            if (h > a) pH += p;
+            else if (h === a) pD += p;
+            else pA += p;
+          }
+        }
+        let totalP = pH + pD + pA;
+        if (totalP === 0) totalP = 1.0;
+
+        unplayedList.push({
+          homeIdx: homeIdx,
+          awayIdx: awayIdx,
+          probH: pH / totalP,
+          probD: pD / totalP,
+          probA: pA / totalP
+        });
+      }
+    }
+
+    const totalPoints = new Array(numTeams).fill(0);
+    const wins = new Array(numTeams).fill(0);
+    const europe = new Array(numTeams).fill(0);
+    const relegation = new Array(numTeams).fill(0);
+
+    for (let sim = 0; sim < nSim; sim++) {
+      const simPoints = new Array(numTeams);
+      for (let t = 0; t < numTeams; t++) {
+        simPoints[t] = basePoints[t];
+      }
+
+      for (let j = 0; j < unplayedList.length; j++) {
+        const u = unplayedList[j];
+        const rand = Math.random();
+
+        if (rand < u.probH) {
+          simPoints[u.homeIdx] += 3;
+        } else if (rand < u.probH + u.probD) {
+          simPoints[u.homeIdx] += 1;
+          simPoints[u.awayIdx] += 1;
+        } else {
+          simPoints[u.awayIdx] += 3;
+        }
+      }
+
+      const indices = [];
+      for (let t = 0; t < numTeams; t++) {
+        indices.push(t);
+      }
+      indices.sort(function(a, b) {
+        return simPoints[b] - simPoints[a];
+      });
+
+      for (let rank = 0; rank < numTeams; rank++) {
+        const tIdx = indices[rank];
+        totalPoints[tIdx] += simPoints[tIdx];
+        if (rank === 0) wins[tIdx]++;
+        if (rank < 4) europe[tIdx]++;
+        if (rank >= numTeams - 3) relegation[tIdx]++;
+      }
+    }
+
+    const simStatements = [];
+    const querySimInsert = "INSERT OR REPLACE INTO simulazioni_classifica (league_div, team_name, avg_points, win_pct, europe_pct, relegation_pct) VALUES (?, ?, ?, ?, ?, ?)";
+    
+    for (let j = 0; j < numTeams; j++) {
+      const tName = teamsList[j];
+      const avgPoints = totalPoints[j] / nSim;
+      const winPct = (wins[j] / nSim) * 100;
+      const europePct = (europe[j] / nSim) * 100;
+      const relegationPct = (relegation[j] / nSim) * 100;
+
+      simStatements.push(
+        dbSoglie.prepare(querySimInsert).bind(
+          divCode,
+          tName,
+          avgPoints,
+          winPct,
+          europePct,
+          relegationPct
+        )
+      );
+    }
+    await dbSoglie.batch(simStatements);
+  }
+
+  await dbSoglie.batch([
+    dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('sync_league_' || ?, 'completed')").bind(divCode),
+    dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('current_season', ?)").bind(rilevataStagione),
+    dbSoglie.prepare("INSERT OR REPLACE INTO api_status (metric, value) VALUES ('last_sync', ?)").bind(new Date().toLocaleString("it-IT"))
+  ]);
+}
