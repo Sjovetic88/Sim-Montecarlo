@@ -1,5 +1,5 @@
 // =========================================================================
-// GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE OPTIMIZZATO E DETTAGLIATO
+// GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE OTTIMIZZATO E DETTAGLIATO
 // =========================================================================
 // Sincronizzatore e simulatore predittivo sequenziale ad altissime prestazioni.
 // Previene il superamento dei limiti di Cloudflare delegando la coda al browser.
@@ -884,9 +884,9 @@ async function syncAndSimulateLeague(divCode, dbArchivio, dbSoglie, nSim) {
         "SELECT e.attacco, e.difesa, e.h_factor FROM team_aliases a LEFT JOIN classifica_elite e ON a.team_id = e.team_id WHERE a.alias = ?"
       ).bind(tName).first();
 
-      let attVal = 1.0;
-      let defVal = 1.0;
-      let hVal = 0.3;
+      let attVal = 0.0;
+      let defVal = 0.0;
+      let hVal = 1.10;
       if (strengthRes) {
         if (strengthRes.attacco !== null) attVal = strengthRes.attacco;
         if (strengthRes.difesa !== null) defVal = strengthRes.difesa;
@@ -898,7 +898,7 @@ async function syncAndSimulateLeague(divCode, dbArchivio, dbSoglie, nSim) {
     // INTEGRAZIONE: Autocalcolo dinamico delle forze se la tabella team_ratings è vuota per questo campionato
     let hasRealStats = false;
     for (let j = 0; j < numTeams; j++) {
-      if (paramList[j].att !== 1.0 || paramList[j].def !== 1.0) {
+      if (paramList[j].att !== 0.0 || paramList[j].def !== 0.0) {
         hasRealStats = true;
         break;
       }
@@ -936,10 +936,14 @@ async function syncAndSimulateLeague(divCode, dbArchivio, dbSoglie, nSim) {
         const scoredAvg = teamGoalsScored[j] / played;
         const concededAvg = teamGoalsConceded[j] / played;
 
+        // MATEMATICA DIXON-COLES: Mappatura in scala logaritmica naturale dei valori calcolati dinamicamente
+        const finalAttScore = avgGoalsPerTeamGame > 0 ? (scoredAvg / avgGoalsPerTeamGame) : 1.0;
+        const finalDefScore = avgGoalsPerTeamGame > 0 ? (concededAvg / avgGoalsPerTeamGame) : 1.0;
+
         paramList[j] = {
-          att: avgGoalsPerTeamGame > 0 ? (scoredAvg / avgGoalsPerTeamGame) : 1.0,
-          def: avgGoalsPerTeamGame > 0 ? (concededAvg / avgGoalsPerTeamGame) : 1.0,
-          home_adv: 0.25
+          att: Math.log(Math.max(0.1, finalAttScore)),
+          def: Math.log(Math.max(0.1, finalDefScore)),
+          home_adv: 1.10
         };
       }
     }
@@ -965,8 +969,9 @@ async function syncAndSimulateLeague(divCode, dbArchivio, dbSoglie, nSim) {
         const hParam = paramList[homeIdx];
         const aParam = paramList[awayIdx];
 
-        const lambda = hParam.att * aParam.def * (1.0 + hParam.home_adv);
-        const mu = aParam.att * hParam.def;
+        // MATEMATICA DIXON-COLES: Applicazione dell'esponenziale della differenza dei parametri logaritmici per lambda e mu
+        const lambda = Math.exp(hParam.att - aParam.def) * hParam.home_adv;
+        const mu = Math.exp(aParam.att - hParam.def);
 
         let pH = 0; let pD = 0; let pA = 0;
         for (let h = 0; h <= 5; h++) {
