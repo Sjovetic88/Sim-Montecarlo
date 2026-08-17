@@ -756,10 +756,36 @@ async function syncAndSimulateLeague(divCode, dbArchivio, dbSoglie, nSim) {
   
   // Utilizzato let per dichiarare correttamente dbSeason in Strict Mode
   let dbSeason = translateSeason(rilevataStagione);
-  
-  const teamsRes = await dbArchivio.prepare(
+
+  // INTEGRAZIONE LEGISLATORE: Legge le regole ufficiali correnti inserite dal tuo worker
+  const rulesRes = await dbArchivio.prepare(
+    "SELECT num_squadre, giornate_totali, num_gironi, partite_totali_lega, soglia_split FROM regole_leghe WHERE div = ?"
+  ).bind(divCode).first();
+
+  let targetNumTeams = 10;
+  let maxIncontri = 2; // Default Standard (Andata e ritorno)
+  if (rulesRes) {
+    if (rulesRes.num_squadre) targetNumTeams = rulesRes.num_squadre;
+    if (rulesRes.num_gironi) maxIncontri = rulesRes.num_gironi;
+  }
+
+  let teamsRes = await dbArchivio.prepare(
     "SELECT DISTINCT hometeam FROM matches WHERE div = ? AND season = ?"
   ).bind(divCode, dbSeason).all();
+
+  // BUG FIX: Se la stagione corrente (es. 2627 appena iniziata) ha meno squadre di quelle ufficiali previste dal Legislatore,
+  // significa che i dati sono ancora incompleti. Il Worker arretra automaticamente all'ultima stagione interamente completata!
+  if (!teamsRes.results || teamsRes.results.length < targetNumTeams) {
+    const prevSeasonRes = await dbArchivio.prepare(
+      "SELECT MAX(season) as prev FROM matches WHERE div = ? AND season < ?"
+    ).bind(divCode, dbSeason).first();
+    if (prevSeasonRes && prevSeasonRes.prev) {
+      dbSeason = prevSeasonRes.prev;
+      teamsRes = await dbArchivio.prepare(
+        "SELECT DISTINCT hometeam FROM matches WHERE div = ? AND season = ?"
+      ).bind(divCode, dbSeason).all();
+    }
+  }
 
   const squadreReali = [];
   if (teamsRes.results) {
@@ -769,16 +795,6 @@ async function syncAndSimulateLeague(divCode, dbArchivio, dbSoglie, nSim) {
   }
 
   if (squadreReali.length >= 2) {
-    // INTEGRAZIONE LEGISLATORE: Legge le regole ufficiali correnti inserite dal tuo worker
-    const rulesRes = await dbArchivio.prepare(
-      "SELECT num_squadre, giornate_totali, num_gironi, partite_totali_lega, soglia_split FROM regole_leghe WHERE div = ?"
-    ).bind(divCode).first();
-
-    let maxIncontri = 2; // Default Standard (Andata e ritorno)
-    if (rulesRes && rulesRes.num_gironi) {
-      maxIncontri = rulesRes.num_gironi;
-    }
-
     // Se il campionato prevede un numero di gironi pari (es. 2 o 4), esegue la generazione andata/ritorno classica
     if (maxIncontri % 2 === 0) {
       const volte = maxIncontri / 2;
