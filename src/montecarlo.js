@@ -1,4 +1,4 @@
-// =========================================================================
+/========================================================================
 // GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE OTTIMIZZATO E DETTAGLIATO
 // =========================================================================
 // Sincronizzatore e simulatore predittivo sequenziale ad altissime prestazioni.
