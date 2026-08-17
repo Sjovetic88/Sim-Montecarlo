@@ -784,7 +784,20 @@ async function syncAndSimulateLeague(divCode, dbArchivio, dbSoglie, nSim) {
   }
 
   if (squadreReali.length >= 2) {
-    const maxIncontri = squadreReali.length === 10 ? 4 : 2;
+    // INTEGRAZIONE AUTO-APPRENDIMENTO STRUTTURA: Calcola dinamicamente quanti turni si giocano in media 
+    // confrontando il numero totale di partite storiche dello scorso anno con il numero di partecipanti
+    const histRes = await dbArchivio.prepare(
+      "SELECT COUNT(*) as totale_part, COUNT(DISTINCT hometeam) as num_sq FROM matches WHERE div = ? AND season = (SELECT MAX(season) FROM matches WHERE div = ? AND season < ?)"
+    ).bind(divCode, divCode, dbSeason).first();
+
+    let maxIncontri = 2; // Default Standard (Andata e ritorno)
+    if (histRes && histRes.num_sq > 1) {
+      const avgMatchesPerTeam = (histRes.totale_part * 2) / histRes.num_sq;
+      const rounds = Math.round(avgMatchesPerTeam / (histRes.num_sq - 1));
+      maxIncontri = Math.max(1, Math.min(6, rounds));
+    } else {
+      maxIncontri = squadreReali.length === 10 ? 4 : 2;
+    }
 
     for (let j = 0; j < squadreReali.length; j++) {
       for (let k = 0; k < squadreReali.length; k++) {
