@@ -1,26 +1,9 @@
-/========================================================================
+// =========================================================================
 // GOLDBET MONTECARLO - MASTER WORKER COMPLETAMENTE OTTIMIZZATO E DETTAGLIATO
 // =========================================================================
 // Sincronizzatore e simulatore predittivo sequenziale ad altissime prestazioni.
 // Previene il superamento dei limiti di Cloudflare delegando la coda al browser.
 // =========================================================================
-
-// Dizionario statico contenente le emoji delle bandiere per i campionati
-const LEAGUE_FLAGS = {
-  "ARG": "🇦🇷", "B1": "🇧🇪", "BRA": "🇧🇷", "CHN": "🇨🇳", "D1": "🇩🇪", "D2": "🇩🇪",
-  "DNK": "🇩🇰", "IRL": "🇮🇪", "MEX": "🇲🇽", "NOR": "🇳🇴", "P1": "🇵🇹", "RUS": "🇷🇺",
-  "SWE": "🇸🇪", "T1": "🇹🇷", "USA": "🇺🇸", "E0": "🇬🇧", "E1": "🇬🇧", "I1": "🇮🇹",
-  "I2": "🇮🇹", "SP1": "🇪🇸", "F1": "🇫🇷", "N1": "🇳🇱", "G1": "🇬🇷", "AUT": "🇦🇹", "SWZ": "🇨🇭"
-};
-
-// Dizionario statico contenente i nomi estesi dei campionati gestiti
-const LEAGUE_NAMES = {
-  "ARG": "ARGENTINA", "B1": "BELGIUM", "BRA": "BRAZIL", "CHN": "CHINA", "D1": "GERMANY",
-  "D2": "GERMANY D2", "DNK": "DENMARK", "IRL": "IRELAND", "MEX": "MEXICO", "NOR": "NORWAY",
-  "P1": "PORTUGAL", "RUS": "RUSSIA", "SWE": "SWEDEN", "T1": "TURKEY", "USA": "USA",
-  "E0": "ENGLAND PREMIER", "E1": "ENGLAND CHAMPIONSHIP", "I1": "ITALY SERIE A",
-  "I2": "ITALY SERIE B", "SP1": "SPAIN LA LIGA", "F1": "FRANCE LIGUE 1", "N1": "NETHERLANDS EREDIVISIE"
-};
 
 // Calcola il fattoriale di un numero intero (necessario per la formula di Poisson)
 function factorial(n) {
@@ -268,8 +251,10 @@ export default {
         const currentSeason = seasonRes ? seasonRes.value : "N.D.";
         const nitroMode = nitroRes ? nitroRes.value : "1";
 
-        // Estrae la lista dei campionati configurati nel database ARCHIVIO
-        const leghe = await dbArchivio.prepare("SELECT id, name, emoji, is_active FROM leagues ORDER BY id ASC").all();
+        // INTEGRAZIONE LEGISLATORE: Estrae la lista dei campionati attivi unendo la tabella leagues con regole_leghe
+        const leghe = await dbArchivio.prepare(
+          "SELECT l.id, r.descrizione as name, r.bandiera as emoji, l.is_active FROM leagues l LEFT JOIN regole_leghe r ON l.id = r.div ORDER BY l.id ASC"
+        ).all();
         const listaLeghe = leghe.results || [];
 
         const countRes = await dbSoglie.prepare("SELECT COUNT(*) as totale FROM calendario_partite").first();
@@ -769,7 +754,7 @@ async function syncAndSimulateLeague(divCode, dbArchivio, dbSoglie, nSim) {
   
   rilevataStagione = seasonRes && seasonRes.ultima ? seasonRes.ultima : "2025/26";
   
-  // CORREZIONE: Utilizzato let per dichiarare correttamente dbSeason in Strict Mode
+  // Utilizzato let per dichiarare correttamente dbSeason in Strict Mode
   let dbSeason = translateSeason(rilevataStagione);
   
   const teamsRes = await dbArchivio.prepare(
@@ -784,66 +769,114 @@ async function syncAndSimulateLeague(divCode, dbArchivio, dbSoglie, nSim) {
   }
 
   if (squadreReali.length >= 2) {
-    // INTEGRAZIONE AUTO-APPRENDIMENTO STRUTTURA: Calcola dinamicamente quanti turni si giocano in media 
-    // confrontando il numero totale di partite storiche dello scorso anno con il numero di partecipanti
-    const histRes = await dbArchivio.prepare(
-      "SELECT COUNT(*) as totale_part, COUNT(DISTINCT hometeam) as num_sq FROM matches WHERE div = ? AND season = (SELECT MAX(season) FROM matches WHERE div = ? AND season < ?)"
-    ).bind(divCode, divCode, dbSeason).first();
+    // INTEGRAZIONE LEGISLATORE: Legge le regole ufficiali correnti inserite dal tuo worker
+    const rulesRes = await dbArchivio.prepare(
+      "SELECT num_squadre, giornate_totali, num_gironi, partite_totali_lega, soglia_split FROM regole_leghe WHERE div = ?"
+    ).bind(divCode).first();
 
     let maxIncontri = 2; // Default Standard (Andata e ritorno)
-    if (histRes && histRes.num_sq > 1) {
-      const avgMatchesPerTeam = (histRes.totale_part * 2) / histRes.num_sq;
-      const rounds = Math.round(avgMatchesPerTeam / (histRes.num_sq - 1));
-      maxIncontri = Math.max(1, Math.min(6, rounds));
-    } else {
-      maxIncontri = squadreReali.length === 10 ? 4 : 2;
+    if (rulesRes && rulesRes.num_gironi) {
+      maxIncontri = rulesRes.num_gironi;
     }
 
-    for (let j = 0; j < squadreReali.length; j++) {
-      for (let k = 0; k < squadreReali.length; k++) {
-        if (j !== k) {
-          const volte = maxIncontri / 2;
-          for (let v = 0; v < volte; v++) {
-            const matchKey = divCode + "_" + squadreReali[j] + "_" + squadreReali[k] + "_" + v;
-            const fixtureId = generateNumericHash(matchKey);
-            
-            const giocataRes = await dbArchivio.prepare(
-              "SELECT fthg, ftag, date FROM matches WHERE div = ? AND season = ? AND hometeam = ? AND awayteam = ? ORDER BY date ASC"
-            ).bind(divCode, dbSeason, squadreReali[j], squadreReali[k]).all();
+    // Se il campionato prevede un numero di gironi pari (es. 2 o 4), esegue la generazione andata/ritorno classica
+    if (maxIncontri % 2 === 0) {
+      const volte = maxIncontri / 2;
+      for (let j = 0; j < squadreReali.length; j++) {
+        for (let k = 0; k < squadreReali.length; k++) {
+          if (j !== k) {
+            for (let v = 0; v < volte; v++) {
+              const matchKey = divCode + "_" + squadreReali[j] + "_" + squadreReali[k] + "_" + v;
+              const fixtureId = generateNumericHash(matchKey);
+              
+              const giocataRes = await dbArchivio.prepare(
+                "SELECT fthg, ftag, date FROM matches WHERE div = ? AND season = ? AND hometeam = ? AND awayteam = ? ORDER BY date ASC"
+              ).bind(divCode, dbSeason, squadreReali[j], squadreReali[k]).all();
 
-            let goalsHome = null;
-            let goalsAway = null;
-            let status = "Scheduled";
-            let matchDate = "";
+              let goalsHome = null;
+              let goalsAway = null;
+              let status = "Scheduled";
+              let matchDate = "";
 
-            if (giocataRes.results && giocataRes.results.length > v) {
-              const g = giocataRes.results[v];
-              goalsHome = g.fthg;
-              goalsAway = g.ftag;
-              status = "Played";
-              if (g.date) {
-                matchDate = g.date + "T15:00:00Z";
+              if (giocataRes.results && giocataRes.results.length > v) {
+                const g = giocataRes.results[v];
+                goalsHome = g.fthg;
+                goalsAway = g.ftag;
+                status = "Played";
+                if (g.date) {
+                  matchDate = g.date + "T15:00:00Z";
+                } else {
+                  matchDate = new Date().toISOString();
+                }
               } else {
-                matchDate = new Date().toISOString();
+                let d = new Date();
+                d.setDate(d.getDate() + (j * 7));
+                matchDate = d.toISOString();
               }
-            } else {
-              let d = new Date();
-              d.setDate(d.getDate() + (j * 7));
-              matchDate = d.toISOString();
-            }
 
-            matches.push({
-              fixture_id: fixtureId,
-              div: divCode,
-              round: "Giornata N.D.",
-              date: matchDate,
-              home: squadreReali[j],
-              away: squadreReali[k],
-              goals_home: goalsHome,
-              goals_away: goalsAway,
-              status: status
-            });
+              matches.push({
+                fixture_id: fixtureId,
+                div: divCode,
+                round: "Giornata N.D.",
+                date: matchDate,
+                home: squadreReali[j],
+                away: squadreReali[k],
+                goals_home: goalsHome,
+                goals_away: goalsAway,
+                status: status
+              });
+            }
           }
+        }
+      }
+    } else {
+      // Se il campionato prevede un solo girone di sola andata (es. Argentina, gironi = 1)
+      // calcola matematicamente una griglia di scontro singolo senza duplicazioni
+      for (let j = 0; j < squadreReali.length; j++) {
+        for (let k = j + 1; k < squadreReali.length; k++) {
+          // Stabilisce in casa e fuori in modo deterministico e ordinato
+          const homeIdx = ((j + k) % 2 === 0) ? j : k;
+          const awayIdx = ((j + k) % 2 === 0) ? k : j;
+
+          const matchKey = divCode + "_" + squadreReali[homeIdx] + "_" + squadreReali[awayIdx] + "_0";
+          const fixtureId = generateNumericHash(matchKey);
+          
+          const giocataRes = await dbArchivio.prepare(
+            "SELECT fthg, ftag, date FROM matches WHERE div = ? AND season = ? AND hometeam = ? AND awayteam = ? ORDER BY date ASC"
+          ).bind(divCode, dbSeason, squadreReali[homeIdx], squadreReali[awayIdx]).all();
+
+          let goalsHome = null;
+          let goalsAway = null;
+          let status = "Scheduled";
+          let matchDate = "";
+
+          if (giocataRes.results && giocataRes.results.length > 0) {
+            const g = giocataRes.results[0];
+            goalsHome = g.fthg;
+            goalsAway = g.ftag;
+            status = "Played";
+            if (g.date) {
+              matchDate = g.date + "T15:00:00Z";
+            } else {
+              matchDate = new Date().toISOString();
+            }
+          } else {
+            let d = new Date();
+            d.setDate(d.getDate() + (j * 7));
+            matchDate = d.toISOString();
+          }
+
+          matches.push({
+            fixture_id: fixtureId,
+            div: divCode,
+            round: "Giornata N.D.",
+            date: matchDate,
+            home: squadreReali[homeIdx],
+            away: squadreReali[awayIdx],
+            goals_home: goalsHome,
+            goals_away: goalsAway,
+            status: status
+          });
         }
       }
     }
